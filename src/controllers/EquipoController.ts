@@ -10,6 +10,7 @@ interface Equipo extends RowDataPacket {
     piso: string;
     oficina: string;
     usuario: string;
+    numeroSerie: string; 
 }
 
 class EquipoController {
@@ -49,22 +50,23 @@ class EquipoController {
     }
 
     // Obtener todos los equipos
-    static async obtenerEquipos(req: Request, res: Response): Promise<Response> {
-        const query = 'SELECT id, nombre, tipo, ip, piso, oficina, usuario FROM equipos ORDER BY nombre';
+static async obtenerEquipos(req: Request, res: Response): Promise<Response> {
+    const query = 'SELECT id, nombre, tipo, ip, piso, oficina, usuario, numeroSerie FROM equipos ORDER BY nombre';
 
-        try {
-            const [rows] = await db.promise().query<Equipo[]>(query);
-            
-            if (rows.length === 0) {
-                return res.status(200).json({ message: 'No hay equipos registrados', data: [] });
-            }
-
-            return res.status(200).json({ message: 'Equipos obtenidos correctamente', data: rows });
-        } catch (err) {
-            console.error('Error al obtener los equipos:', err);
-            return res.status(500).json({ error: 'Error al obtener los equipos' });
+    try {
+        const [rows] = await db.promise().query<Equipo[]>(query);
+        
+        if (rows.length === 0) {
+            return res.status(200).json({ message: 'No hay equipos registrados', data: [] });
         }
+
+        return res.status(200).json({ message: 'Equipos obtenidos correctamente', data: rows });
+    } catch (err) {
+        console.error('Error al obtener los equipos:', err);
+        return res.status(500).json({ error: 'Error al obtener los equipos' });
     }
+}
+
 
     // Obtener un equipo por ID
     static async obtenerEquipo(req: Request, res: Response): Promise<Response> {
