@@ -16,22 +16,29 @@ interface Impresora extends RowDataPacket {
 class ImpresoraController {
     // Crear una impresora
     static async crearImpresora(req: Request, res: Response): Promise<Response> {
-        const { nombre, tipo, ip, piso, oficina, recurso, modeloRecurso } = req.body;
+    const { nombre, tipo, ip, piso, oficina, recurso, modeloRecurso, numeroSerie } = req.body;
 
-        if (!nombre || !tipo || !ip || !piso || !oficina || !recurso || !modeloRecurso) {
-            return res.status(400).json({ message: 'Todos los campos son requeridos.' });
-        }
-
-        const query = 'INSERT INTO impresoras (nombre, tipo, ip, piso, oficina, recurso, modeloRecurso) VALUES (?, ?, ?, ?, ?, ?, ?)';
-
-        try {
-            const [result] = await db.promise().query<ResultSetHeader>(query, [nombre, tipo, ip, piso, oficina, recurso, modeloRecurso]);
-            return res.status(201).json({ message: 'Impresora creada correctamente', id: result.insertId });
-        } catch (err: any) {
-            console.error('Error al agregar la impresora:', err);
-            return res.status(500).json({ error: 'Error al crear la impresora' });
-        }
+    if (!nombre || !tipo || !ip || !piso || !oficina || !recurso || !modeloRecurso || !numeroSerie) {
+        return res.status(400).json({ message: 'Todos los campos son requeridos.' });
     }
+
+    const query = `
+        INSERT INTO impresoras 
+        (nombre, tipo, ip, piso, oficina, recurso, modeloRecurso, numeroSerie)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+
+    try {
+        const [result] = await db.promise().query<ResultSetHeader>(query, [
+            nombre, tipo, ip, piso, oficina, recurso, modeloRecurso, numeroSerie
+        ]);
+        return res.status(201).json({ message: 'Impresora creada correctamente', id: result.insertId });
+    } catch (err: any) {
+        console.error('Error al agregar la impresora:', err);
+        return res.status(500).json({ error: 'Error al crear la impresora' });
+    }
+}
+
 
   // Obtener todas las impresoras
     static async obtenerImpresoras(req: Request, res: Response): Promise<Response> {

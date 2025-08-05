@@ -1,18 +1,18 @@
 import { Router } from 'express';
 import EquipoController from '../controllers/EquipoController';
-import ImpresoraController from '../controllers/ImpresoraController';  // Importar ImpresoraController
-import DispositivoController from '../controllers/DispositivoController';  // Importar DispositivoController
-import asyncHandler from '../middleware/asyncHandler'; // Importa el middleware
+import ImpresoraController from '../controllers/ImpresoraController';
+import DispositivoController from '../controllers/DispositivoController';
+import asyncHandler from '../middleware/asyncHandler';
 
 const router = Router();
 
 // Rutas para equipos
-router.post('/equipos', asyncHandler(EquipoController.crearEquipo));  
-router.get('/equipos', asyncHandler(EquipoController.obtenerEquipos));  
-router.get('/equipos/:id', asyncHandler(EquipoController.obtenerEquipo));  
-router.put('/equipos/:id', asyncHandler(EquipoController.actualizarEquipo));  
-router.delete('/equipos/:id', asyncHandler(EquipoController.eliminarEquipo));  
-router.get('/exportar-equipos', asyncHandler(EquipoController.exportarEquipos));  
+router.post('/equipos', asyncHandler(EquipoController.crearEquipo));
+router.get('/equipos', asyncHandler(EquipoController.obtenerEquipos));
+router.get('/equipos/:id', asyncHandler(EquipoController.obtenerEquipo));
+router.put('/equipos/:id', asyncHandler(EquipoController.actualizarEquipo));
+router.delete('/equipos/:id', asyncHandler(EquipoController.eliminarEquipo));
+router.get('/exportar-equipos', asyncHandler(EquipoController.exportarEquipos));
 
 // Rutas para impresoras
 router.post('/impresoras', asyncHandler(ImpresoraController.crearImpresora));
