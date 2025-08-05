@@ -20,21 +20,30 @@ db.connect((err) => {
     const queryEquipos = `
         CREATE TABLE IF NOT EXISTS equipos (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            nombre VARCHAR(255) NOT NULL,
-            tipo VARCHAR(255) NOT NULL,
-            ip VARCHAR(255) NOT NULL,
-            piso VARCHAR(255) NOT NULL,
-            oficina VARCHAR(255) NOT NULL,
-            usuario VARCHAR(255) NOT NULL,
-            numeroSerie VARCHAR(255) NOT NULL
+            tipo VARCHAR(50) NOT NULL,
+            marca VARCHAR(100) NOT NULL,
+            modelo VARCHAR(100) NOT NULL,
+            procesador VARCHAR(255) NOT NULL,
+            grafica VARCHAR(255),
+            ram VARCHAR(100) NOT NULL,
+            almacenamiento VARCHAR(100) NOT NULL,
+            placaMadre VARCHAR(255),
+            oficina VARCHAR(100) NOT NULL,
+            vlan VARCHAR(50),
+            ip VARCHAR(50) NOT NULL UNIQUE,
+            mac VARCHAR(50) NOT NULL UNIQUE,
+            numeroSerie VARCHAR(100),
+            usuario VARCHAR(100)
         )
     `;
     
-    db.query(queryEquipos, (err, result) => {
+    db.query(queryEquipos, (err) => {
         if (err) {
             console.error('Error al crear la tabla `equipos`:', err);
         } else {
             console.log('Tabla `equipos` verificada y/o creada correctamente');
+            // Verificar y agregar columna mac si no existe (para migraciones)
+            verificarYAgregarColumnas('equipos');
         }
     });
 
@@ -53,7 +62,7 @@ db.connect((err) => {
         )
     `;
     
-    db.query(queryImpresoras, (err, result) => {
+    db.query(queryImpresoras, (err) => {
         if (err) {
             console.error('Error al crear la tabla `impresoras`:', err);
         } else {
@@ -74,7 +83,7 @@ db.connect((err) => {
         )
     `;
     
-    db.query(queryDispositivos, (err, result) => {
+    db.query(queryDispositivos, (err) => {
         if (err) {
             console.error('Error al crear la tabla `dispositivos`:', err);
         } else {
@@ -83,7 +92,7 @@ db.connect((err) => {
     });
 });
 
-// Función para verificar y agregar columnas faltantes
+// Función para verificar y agregar columnas faltantes (opcional si migras desde una base antigua)
 function verificarYAgregarColumnas(nombreTabla: string): void {
     const checkColumns = `
         SELECT COLUMN_NAME 
@@ -96,12 +105,25 @@ function verificarYAgregarColumnas(nombreTabla: string): void {
             console.error(`Error al verificar las columnas de ${nombreTabla}:`, err);
             return;
         }
-        
-        // Convertir result a array y extraer nombres de columnas
+
         const rows = result as RowDataPacket[];
         const columnas = rows.map((row) => row.COLUMN_NAME);
-        
-        // Verificar y agregar columna 'tipo' si no existe
+
+        if (nombreTabla === 'equipos' && !columnas.includes('mac')) {
+            const addMacColumn = `
+                ALTER TABLE equipos 
+                ADD COLUMN mac VARCHAR(50) NOT NULL DEFAULT '',
+                ADD UNIQUE (mac);
+            `;
+            db.query(addMacColumn, (err) => {
+                if (err) {
+                    console.error('Error al agregar columna \'mac\' en equipos:', err);
+                } else {
+                    console.log('Columna \'mac\' agregada a equipos');
+                }
+            });
+        }
+
         if (!columnas.includes('tipo')) {
             const addTipoColumn = `
                 ALTER TABLE ${nombreTabla} 
@@ -116,7 +138,6 @@ function verificarYAgregarColumnas(nombreTabla: string): void {
             });
         }
 
-        // Verificar y agregar columna 'numeroSerie' si no existe
         if (!columnas.includes('numeroSerie')) {
             const addNumeroSerieColumn = `
                 ALTER TABLE ${nombreTabla} 
@@ -131,7 +152,6 @@ function verificarYAgregarColumnas(nombreTabla: string): void {
             });
         }
 
-        // Para dispositivos, verificar columna 'cantidad' (ya existe)
         if (nombreTabla === 'dispositivos' && !columnas.includes('cantidad')) {
             const addCantidadColumn = `
                 ALTER TABLE dispositivos 
