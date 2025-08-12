@@ -8,16 +8,31 @@ interface Equipo extends RowDataPacket {
     marca: string;
     modelo: string;
     procesador: string;
-    grafica: string;
     ram: string;
     almacenamiento: string;
-    placaMadre: string;
     oficina: string;
-    vlan: string;
     ip: string;
     mac: string;
-    numeroSerie: string;
-    usuario: string;
+    codigoPatrimonial: string;
+    so: string;
+    officeVersion: string;
+    antivirus: string;
+    estado: string;
+    marcaMonitor: string;
+    pulgadasMonitor: string;
+    codigoPatrimonialMonitor: string;
+    tieneTeclado: number; // Cambiado a number para coincidir con la BD
+    tieneMouse: number;   // Cambiado a number para coincidir con la BD
+    usuarioId?: number;   // Nueva relación con usuarios
+}
+
+interface Usuario extends RowDataPacket {
+    id: number;
+    dni: string;
+    nombres: string;
+    apellidos: string;
+    oficina: string;
+    tipoContrato: string;
 }
 
 class EquipoController {
@@ -28,19 +43,26 @@ class EquipoController {
             marca,
             modelo,
             procesador,
-            grafica,
             ram,
             almacenamiento,
-            placaMadre,
             oficina,
-            vlan,
             ip,
             mac,
-            numeroSerie,
-            usuario
+            codigoPatrimonial,
+            so,
+            officeVersion,
+            antivirus,
+            estado,
+            marcaMonitor,
+            pulgadasMonitor,
+            codigoPatrimonialMonitor,
+            tieneTeclado,
+            tieneMouse,
+            usuarioId
         } = req.body;
 
-        if (!tipo || !marca || !modelo || !procesador || !ram || !almacenamiento || !oficina || !ip || !mac) {
+        if (!tipo || !marca || !modelo || !procesador || !ram || !almacenamiento || 
+            !oficina || !ip || !mac || !estado || !marcaMonitor || !pulgadasMonitor) {
             return res.status(400).json({ message: 'Faltan campos requeridos.' });
         }
 
@@ -54,15 +76,37 @@ class EquipoController {
             return res.status(400).json({ message: 'Formato de MAC inválido.' });
         }
 
+        // Verificar si el usuario existe si se proporciona usuarioId
+        if (usuarioId) {
+            try {
+                const [usuario] = await db.promise().query<Usuario[]>(
+                    'SELECT id FROM usuarios WHERE id = ?', 
+                    [usuarioId]
+                );
+                if (usuario.length === 0) {
+                    return res.status(400).json({ message: 'El usuario especificado no existe' });
+                }
+            } catch (err) {
+                console.error('Error al verificar usuario:', err);
+                return res.status(500).json({ error: 'Error al verificar usuario' });
+            }
+        }
+
         const query = `
             INSERT INTO equipos 
-            (tipo, marca, modelo, procesador, grafica, ram, almacenamiento, placaMadre, oficina, vlan, ip, mac, numeroSerie, usuario) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (tipo, marca, modelo, procesador, ram, almacenamiento, oficina, ip, mac, 
+             codigoPatrimonial, so, officeVersion, antivirus, estado,
+             marcaMonitor, pulgadasMonitor, codigoPatrimonialMonitor, 
+             tieneTeclado, tieneMouse, usuarioId) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         try {
             const [result] = await db.promise().query<ResultSetHeader>(query, [
-                tipo, marca, modelo, procesador, grafica, ram, almacenamiento, placaMadre, oficina, vlan, ip, mac, numeroSerie, usuario
+                tipo, marca, modelo, procesador, ram, almacenamiento, oficina, ip, mac, 
+                codigoPatrimonial, so, officeVersion, antivirus, estado,
+                marcaMonitor, pulgadasMonitor, codigoPatrimonialMonitor || null, 
+                tieneTeclado ? 1 : 0, tieneMouse ? 1 : 0, usuarioId || null
             ]);
             return res.status(201).json({
                 message: 'Equipo creado correctamente',
@@ -77,15 +121,35 @@ class EquipoController {
         }
     }
 
-    // Obtener todos los equipos
+    // Obtener todos los equipos con información de usuario
     static async obtenerEquipos(req: Request, res: Response): Promise<Response> {
-        const query = 'SELECT * FROM equipos ORDER BY id DESC';
+        const query = `
+            SELECT e.*, 
+                   u.id as usuario_id, u.dni, u.nombres, u.apellidos, u.tipoContrato
+            FROM equipos e
+            LEFT JOIN usuarios u ON e.usuarioId = u.id
+            ORDER BY e.id DESC
+        `;
 
         try {
-            const [rows] = await db.promise().query<Equipo[]>(query);
+            const [rows] = await db.promise().query<(Equipo & Usuario)[]>(query);
+            
+            const equipos = rows.map(equipo => ({
+                ...equipo,
+                tieneTeclado: equipo.tieneTeclado === 1,
+                tieneMouse: equipo.tieneMouse === 1,
+                usuario: equipo.usuario_id ? {
+                    id: equipo.usuario_id,
+                    dni: equipo.dni,
+                    nombres: equipo.nombres,
+                    apellidos: equipo.apellidos,
+                    tipoContrato: equipo.tipoContrato
+                } : null
+            }));
+
             return res.status(200).json({
                 message: 'Equipos obtenidos correctamente',
-                data: rows
+                data: equipos
             });
         } catch (err) {
             console.error('Error al obtener los equipos:', err);
@@ -93,7 +157,7 @@ class EquipoController {
         }
     }
 
-    // Obtener equipo por ID
+    // Obtener equipo por ID con información de usuario
     static async obtenerEquipo(req: Request, res: Response): Promise<Response> {
         const { id } = req.params;
 
@@ -101,23 +165,45 @@ class EquipoController {
             return res.status(400).json({ message: 'ID inválido' });
         }
 
-        const query = 'SELECT * FROM equipos WHERE id = ?';
+        const query = `
+            SELECT e.*, 
+                   u.id as usuario_id, u.dni, u.nombres, u.apellidos, u.tipoContrato
+            FROM equipos e
+            LEFT JOIN usuarios u ON e.usuarioId = u.id
+            WHERE e.id = ?
+        `;
 
         try {
-            const [rows] = await db.promise().query<Equipo[]>(query, [id]);
+            const [rows] = await db.promise().query<(Equipo & Usuario)[]>(query, [id]);
 
             if (rows.length === 0) {
                 return res.status(404).json({ message: 'Equipo no encontrado' });
             }
 
-            return res.status(200).json({ message: 'Equipo obtenido correctamente', data: rows[0] });
+            const equipo = {
+                ...rows[0],
+                tieneTeclado: rows[0].tieneTeclado === 1,
+                tieneMouse: rows[0].tieneMouse === 1,
+                usuario: rows[0].usuario_id ? {
+                    id: rows[0].usuario_id,
+                    dni: rows[0].dni,
+                    nombres: rows[0].nombres,
+                    apellidos: rows[0].apellidos,
+                    tipoContrato: rows[0].tipoContrato
+                } : null
+            };
+
+            return res.status(200).json({ 
+                message: 'Equipo obtenido correctamente', 
+                data: equipo 
+            });
         } catch (err) {
             console.error('Error al obtener el equipo:', err);
             return res.status(500).json({ error: 'Error al obtener el equipo' });
         }
     }
 
-    // Actualizar equipo
+    // Actualizar equipo (incluyendo relación con usuario)
     static async actualizarEquipo(req: Request, res: Response): Promise<Response> {
         const { id } = req.params;
         const {
@@ -125,23 +211,30 @@ class EquipoController {
             marca,
             modelo,
             procesador,
-            grafica,
             ram,
             almacenamiento,
-            placaMadre,
             oficina,
-            vlan,
             ip,
             mac,
-            numeroSerie,
-            usuario
+            codigoPatrimonial,
+            so,
+            officeVersion,
+            antivirus,
+            estado,
+            marcaMonitor,
+            pulgadasMonitor,
+            codigoPatrimonialMonitor,
+            tieneTeclado,
+            tieneMouse,
+            usuarioId
         } = req.body;
 
         if (isNaN(Number(id))) {
             return res.status(400).json({ message: 'ID inválido' });
         }
 
-        if (!tipo || !marca || !modelo || !procesador || !ram || !almacenamiento || !oficina || !ip || !mac) {
+        if (!tipo || !marca || !modelo || !procesador || !ram || !almacenamiento || 
+            !oficina || !ip || !mac || !estado || !marcaMonitor || !pulgadasMonitor) {
             return res.status(400).json({ message: 'Faltan campos requeridos.' });
         }
 
@@ -155,16 +248,38 @@ class EquipoController {
             return res.status(400).json({ message: 'Formato de MAC inválido.' });
         }
 
+        // Verificar si el usuario existe si se proporciona usuarioId
+        if (usuarioId) {
+            try {
+                const [usuario] = await db.promise().query<Usuario[]>(
+                    'SELECT id FROM usuarios WHERE id = ?', 
+                    [usuarioId]
+                );
+                if (usuario.length === 0) {
+                    return res.status(400).json({ message: 'El usuario especificado no existe' });
+                }
+            } catch (err) {
+                console.error('Error al verificar usuario:', err);
+                return res.status(500).json({ error: 'Error al verificar usuario' });
+            }
+        }
+
         const query = `
             UPDATE equipos SET 
-                tipo = ?, marca = ?, modelo = ?, procesador = ?, grafica = ?, ram = ?, almacenamiento = ?, placaMadre = ?, 
-                oficina = ?, vlan = ?, ip = ?, mac = ?, numeroSerie = ?, usuario = ? 
+                tipo = ?, marca = ?, modelo = ?, procesador = ?, ram = ?, almacenamiento = ?, 
+                oficina = ?, ip = ?, mac = ?, codigoPatrimonial = ?, 
+                so = ?, officeVersion = ?, antivirus = ?, estado = ?,
+                marcaMonitor = ?, pulgadasMonitor = ?, codigoPatrimonialMonitor = ?,
+                tieneTeclado = ?, tieneMouse = ?, usuarioId = ?
             WHERE id = ?
         `;
 
         try {
             const [result] = await db.promise().query<ResultSetHeader>(query, [
-                tipo, marca, modelo, procesador, grafica, ram, almacenamiento, placaMadre, oficina, vlan, ip, mac, numeroSerie, usuario, id
+                tipo, marca, modelo, procesador, ram, almacenamiento, oficina, ip, mac, 
+                codigoPatrimonial, so, officeVersion, antivirus, estado,
+                marcaMonitor, pulgadasMonitor, codigoPatrimonialMonitor || null,
+                tieneTeclado ? 1 : 0, tieneMouse ? 1 : 0, usuarioId || null, id
             ]);
 
             if (result.affectedRows === 0) {
@@ -181,7 +296,7 @@ class EquipoController {
         }
     }
 
-    // Eliminar equipo
+    // Eliminar equipo (se mantiene igual)
     static async eliminarEquipo(req: Request, res: Response): Promise<Response> {
         const { id } = req.params;
 
@@ -205,56 +320,116 @@ class EquipoController {
         }
     }
 
-    // Buscar equipos
+    // Buscar equipos (con filtro por usuario)
     static async buscarEquipos(req: Request, res: Response): Promise<Response> {
-        const { tipo, marca, modelo, oficina, ip, mac, usuario } = req.query;
-        let query = 'SELECT * FROM equipos WHERE 1=1';
+        const { 
+            tipo, 
+            marca, 
+            modelo, 
+            oficina, 
+            ip, 
+            mac, 
+            estado,
+            marcaMonitor,
+            tieneTeclado,
+            tieneMouse,
+            usuarioId
+        } = req.query;
+        
+        let query = `
+            SELECT e.*, 
+                   u.id as usuario_id, u.dni, u.nombres, u.apellidos, u.tipoContrato
+            FROM equipos e
+            LEFT JOIN usuarios u ON e.usuarioId = u.id
+            WHERE 1=1
+        `;
         const params: any[] = [];
 
         if (tipo) {
-            query += ' AND tipo = ?';
+            query += ' AND e.tipo = ?';
             params.push(tipo);
         }
         if (marca) {
-            query += ' AND marca LIKE ?';
+            query += ' AND e.marca LIKE ?';
             params.push(`%${marca}%`);
         }
         if (modelo) {
-            query += ' AND modelo LIKE ?';
+            query += ' AND e.modelo LIKE ?';
             params.push(`%${modelo}%`);
         }
         if (oficina) {
-            query += ' AND oficina LIKE ?';
+            query += ' AND e.oficina LIKE ?';
             params.push(`%${oficina}%`);
         }
         if (ip) {
-            query += ' AND ip LIKE ?';
+            query += ' AND e.ip LIKE ?';
             params.push(`%${ip}%`);
         }
         if (mac) {
-            query += ' AND mac LIKE ?';
+            query += ' AND e.mac LIKE ?';
             params.push(`%${mac}%`);
         }
-        if (usuario) {
-            query += ' AND usuario LIKE ?';
-            params.push(`%${usuario}%`);
+        if (estado) {
+            query += ' AND e.estado = ?';
+            params.push(estado);
+        }
+        if (marcaMonitor) {
+            query += ' AND e.marcaMonitor LIKE ?';
+            params.push(`%${marcaMonitor}%`);
+        }
+        if (tieneTeclado !== undefined) {
+            query += ' AND e.tieneTeclado = ?';
+            params.push(tieneTeclado === 'true' ? 1 : 0);
+        }
+        if (tieneMouse !== undefined) {
+            query += ' AND e.tieneMouse = ?';
+            params.push(tieneMouse === 'true' ? 1 : 0);
+        }
+        if (usuarioId) {
+            query += ' AND e.usuarioId = ?';
+            params.push(usuarioId);
         }
 
         try {
-            const [rows] = await db.promise().query<Equipo[]>(query, params);
-            return res.status(200).json({ data: rows, total: rows.length });
+            const [rows] = await db.promise().query<(Equipo & Usuario)[]>(query, params);
+            
+            const equipos = rows.map(equipo => ({
+                ...equipo,
+                tieneTeclado: equipo.tieneTeclado === 1,
+                tieneMouse: equipo.tieneMouse === 1,
+                usuario: equipo.usuario_id ? {
+                    id: equipo.usuario_id,
+                    dni: equipo.dni,
+                    nombres: equipo.nombres,
+                    apellidos: equipo.apellidos,
+                    tipoContrato: equipo.tipoContrato
+                } : null
+            }));
+
+            return res.status(200).json({ 
+                data: equipos, 
+                total: equipos.length 
+            });
         } catch (err) {
             console.error('Error al buscar equipos:', err);
             return res.status(500).json({ error: 'Error al buscar equipos' });
         }
     }
 
-    // Exportar equipos (para frontend y Excel)
+    // Exportar equipos (incluyendo datos de usuario)
     static async exportarEquipos(req: Request, res: Response): Promise<Response> {
         const query = `
-            SELECT id, tipo, marca, modelo, procesador, grafica, ram, almacenamiento, placaMadre, oficina, vlan, ip, mac, numeroSerie, usuario
-            FROM equipos
-            ORDER BY id DESC
+            SELECT 
+                e.id, e.tipo, e.marca, e.modelo, e.procesador, e.ram, e.almacenamiento, e.oficina, 
+                e.ip, e.mac, e.codigoPatrimonial, e.so, e.officeVersion, e.antivirus, e.estado,
+                e.marcaMonitor, e.pulgadasMonitor, e.codigoPatrimonialMonitor,
+                CASE WHEN e.tieneTeclado = 1 THEN 'Sí' ELSE 'No' END AS tieneTeclado,
+                CASE WHEN e.tieneMouse = 1 THEN 'Sí' ELSE 'No' END AS tieneMouse,
+                u.dni, CONCAT(u.nombres, ' ', u.apellidos) as usuario,
+                u.tipoContrato
+            FROM equipos e
+            LEFT JOIN usuarios u ON e.usuarioId = u.id
+            ORDER BY e.id DESC
         `;
 
         try {
