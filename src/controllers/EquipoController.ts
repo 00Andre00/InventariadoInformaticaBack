@@ -21,9 +21,10 @@ interface Equipo extends RowDataPacket {
     marcaMonitor: string;
     pulgadasMonitor: string;
     codigoPatrimonialMonitor: string;
-    tieneTeclado: number; // Cambiado a number para coincidir con la BD
-    tieneMouse: number;   // Cambiado a number para coincidir con la BD
-    usuarioId?: number;   // Nueva relación con usuarios
+    estadoMonitor: string;
+    tieneTeclado: number;
+    tieneMouse: number;
+    usuarioId?: number;
 }
 
 interface Usuario extends RowDataPacket {
@@ -56,13 +57,14 @@ class EquipoController {
             marcaMonitor,
             pulgadasMonitor,
             codigoPatrimonialMonitor,
+            estadoMonitor,
             tieneTeclado,
             tieneMouse,
             usuarioId
         } = req.body;
 
         if (!tipo || !marca || !modelo || !procesador || !ram || !almacenamiento || 
-            !oficina || !ip || !mac || !estado || !marcaMonitor || !pulgadasMonitor) {
+            !oficina || !ip || !mac || !estado || !marcaMonitor || !pulgadasMonitor || !estadoMonitor) {
             return res.status(400).json({ message: 'Faltan campos requeridos.' });
         }
 
@@ -96,16 +98,16 @@ class EquipoController {
             INSERT INTO equipos 
             (tipo, marca, modelo, procesador, ram, almacenamiento, oficina, ip, mac, 
              codigoPatrimonial, so, officeVersion, antivirus, estado,
-             marcaMonitor, pulgadasMonitor, codigoPatrimonialMonitor, 
+             marcaMonitor, pulgadasMonitor, codigoPatrimonialMonitor, estadoMonitor,
              tieneTeclado, tieneMouse, usuarioId) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         try {
             const [result] = await db.promise().query<ResultSetHeader>(query, [
                 tipo, marca, modelo, procesador, ram, almacenamiento, oficina, ip, mac, 
                 codigoPatrimonial, so, officeVersion, antivirus, estado,
-                marcaMonitor, pulgadasMonitor, codigoPatrimonialMonitor || null, 
+                marcaMonitor, pulgadasMonitor, codigoPatrimonialMonitor || null, estadoMonitor,
                 tieneTeclado ? 1 : 0, tieneMouse ? 1 : 0, usuarioId || null
             ]);
             return res.status(201).json({
@@ -224,6 +226,7 @@ class EquipoController {
             marcaMonitor,
             pulgadasMonitor,
             codigoPatrimonialMonitor,
+            estadoMonitor,
             tieneTeclado,
             tieneMouse,
             usuarioId
@@ -234,7 +237,7 @@ class EquipoController {
         }
 
         if (!tipo || !marca || !modelo || !procesador || !ram || !almacenamiento || 
-            !oficina || !ip || !mac || !estado || !marcaMonitor || !pulgadasMonitor) {
+            !oficina || !ip || !mac || !estado || !marcaMonitor || !pulgadasMonitor || !estadoMonitor) {
             return res.status(400).json({ message: 'Faltan campos requeridos.' });
         }
 
@@ -269,7 +272,7 @@ class EquipoController {
                 tipo = ?, marca = ?, modelo = ?, procesador = ?, ram = ?, almacenamiento = ?, 
                 oficina = ?, ip = ?, mac = ?, codigoPatrimonial = ?, 
                 so = ?, officeVersion = ?, antivirus = ?, estado = ?,
-                marcaMonitor = ?, pulgadasMonitor = ?, codigoPatrimonialMonitor = ?,
+                marcaMonitor = ?, pulgadasMonitor = ?, codigoPatrimonialMonitor = ?, estadoMonitor = ?,
                 tieneTeclado = ?, tieneMouse = ?, usuarioId = ?
             WHERE id = ?
         `;
@@ -278,7 +281,7 @@ class EquipoController {
             const [result] = await db.promise().query<ResultSetHeader>(query, [
                 tipo, marca, modelo, procesador, ram, almacenamiento, oficina, ip, mac, 
                 codigoPatrimonial, so, officeVersion, antivirus, estado,
-                marcaMonitor, pulgadasMonitor, codigoPatrimonialMonitor || null,
+                marcaMonitor, pulgadasMonitor, codigoPatrimonialMonitor || null, estadoMonitor,
                 tieneTeclado ? 1 : 0, tieneMouse ? 1 : 0, usuarioId || null, id
             ]);
 
@@ -296,7 +299,7 @@ class EquipoController {
         }
     }
 
-    // Eliminar equipo (se mantiene igual)
+    // Eliminar equipo
     static async eliminarEquipo(req: Request, res: Response): Promise<Response> {
         const { id } = req.params;
 
@@ -331,6 +334,7 @@ class EquipoController {
             mac, 
             estado,
             marcaMonitor,
+            estadoMonitor,
             tieneTeclado,
             tieneMouse,
             usuarioId
@@ -377,6 +381,10 @@ class EquipoController {
             query += ' AND e.marcaMonitor LIKE ?';
             params.push(`%${marcaMonitor}%`);
         }
+        if (estadoMonitor) {
+            query += ' AND e.estadoMonitor = ?';
+            params.push(estadoMonitor);
+        }
         if (tieneTeclado !== undefined) {
             query += ' AND e.tieneTeclado = ?';
             params.push(tieneTeclado === 'true' ? 1 : 0);
@@ -422,7 +430,7 @@ class EquipoController {
             SELECT 
                 e.id, e.tipo, e.marca, e.modelo, e.procesador, e.ram, e.almacenamiento, e.oficina, 
                 e.ip, e.mac, e.codigoPatrimonial, e.so, e.officeVersion, e.antivirus, e.estado,
-                e.marcaMonitor, e.pulgadasMonitor, e.codigoPatrimonialMonitor,
+                e.marcaMonitor, e.pulgadasMonitor, e.codigoPatrimonialMonitor, e.estadoMonitor,
                 CASE WHEN e.tieneTeclado = 1 THEN 'Sí' ELSE 'No' END AS tieneTeclado,
                 CASE WHEN e.tieneMouse = 1 THEN 'Sí' ELSE 'No' END AS tieneMouse,
                 u.dni, CONCAT(u.nombres, ' ', u.apellidos) as usuario,

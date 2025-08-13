@@ -9,6 +9,7 @@ interface Impresora extends RowDataPacket {
     mac: string;
     oficina: string;
     codigoPatrimonial: string;
+    estado: string;
     usuarioId?: number;
 }
 
@@ -24,9 +25,9 @@ interface Usuario extends RowDataPacket {
 class ImpresoraController {
     // Crear una impresora
     static async crearImpresora(req: Request, res: Response): Promise<Response> {
-        const { modelo, ip, mac, oficina, codigoPatrimonial, usuarioId } = req.body;
+        const { modelo, ip, mac, oficina, codigoPatrimonial, estado, usuarioId } = req.body;
 
-        if (!modelo || !ip || !mac || !oficina || !codigoPatrimonial) {
+        if (!modelo || !ip || !mac || !oficina || !codigoPatrimonial || !estado) {
             return res.status(400).json({ message: 'Faltan campos requeridos.' });
         }
 
@@ -58,13 +59,13 @@ class ImpresoraController {
 
         const query = `
             INSERT INTO impresoras 
-            (modelo, ip, mac, oficina, codigoPatrimonial, usuarioId) 
-            VALUES (?, ?, ?, ?, ?, ?)
+            (modelo, ip, mac, oficina, codigoPatrimonial, estado, usuarioId) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         `;
 
         try {
             const [result] = await db.promise().query<ResultSetHeader>(query, [
-                modelo, ip, mac, oficina, codigoPatrimonial, usuarioId || null
+                modelo, ip, mac, oficina, codigoPatrimonial, estado, usuarioId || null
             ]);
             return res.status(201).json({ 
                 message: 'Impresora creada correctamente', 
@@ -160,13 +161,13 @@ class ImpresoraController {
     // Actualizar impresora (incluyendo relación con usuario)
     static async actualizarImpresora(req: Request, res: Response): Promise<Response> {
         const { id } = req.params;
-        const { modelo, ip, mac, oficina, codigoPatrimonial, usuarioId } = req.body;
+        const { modelo, ip, mac, oficina, codigoPatrimonial, estado, usuarioId } = req.body;
 
         if (isNaN(Number(id))) {
             return res.status(400).json({ message: 'ID inválido' });
         }
 
-        if (!modelo || !ip || !mac || !oficina || !codigoPatrimonial) {
+        if (!modelo || !ip || !mac || !oficina || !codigoPatrimonial || !estado) {
             return res.status(400).json({ message: 'Faltan campos requeridos.' });
         }
 
@@ -199,13 +200,13 @@ class ImpresoraController {
         const query = `
             UPDATE impresoras SET 
                 modelo = ?, ip = ?, mac = ?, oficina = ?, 
-                codigoPatrimonial = ?, usuarioId = ?
+                codigoPatrimonial = ?, estado = ?, usuarioId = ?
             WHERE id = ?
         `;
 
         try {
             const [result] = await db.promise().query<ResultSetHeader>(query, [
-                modelo, ip, mac, oficina, codigoPatrimonial, usuarioId || null, id
+                modelo, ip, mac, oficina, codigoPatrimonial, estado, usuarioId || null, id
             ]);
 
             if (result.affectedRows === 0) {
@@ -253,6 +254,7 @@ class ImpresoraController {
             ip, 
             mac, 
             oficina,
+            estado,
             usuarioId
         } = req.query;
         
@@ -280,6 +282,10 @@ class ImpresoraController {
         if (oficina) {
             query += ' AND i.oficina LIKE ?';
             params.push(`%${oficina}%`);
+        }
+        if (estado) {
+            query += ' AND i.estado = ?';
+            params.push(estado);
         }
         if (usuarioId) {
             query += ' AND i.usuarioId = ?';
@@ -314,7 +320,7 @@ class ImpresoraController {
     static async exportarImpresoras(req: Request, res: Response): Promise<Response> {
         const query = `
             SELECT 
-                i.id, i.modelo, i.ip, i.mac, i.oficina, i.codigoPatrimonial,
+                i.id, i.modelo, i.ip, i.mac, i.oficina, i.codigoPatrimonial, i.estado,
                 u.dni, CONCAT(u.nombres, ' ', u.apellidos) as usuario,
                 u.tipoContrato
             FROM impresoras i
