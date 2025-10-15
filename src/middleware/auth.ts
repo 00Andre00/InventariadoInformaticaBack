@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import db from '../config/db'; // Ruta corregida
+import db from '../config/db';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'tu_clave_secreta_muy_segura_aqui';
 
@@ -57,6 +57,32 @@ export const requireAdmin = (
 ): void => {
     if (req.user?.rol !== 'admin') {
         res.status(403).json({ error: 'Se requieren permisos de administrador' });
+        return;
+    }
+    next();
+};
+
+// Middleware para verificar rol de informática (admin e informática)
+export const requireInformatica = (
+    req: AuthenticatedRequest, 
+    res: Response, 
+    next: NextFunction
+): void => {
+    if (!['admin', 'informatica'].includes(req.user?.rol || '')) {
+        res.status(403).json({ error: 'Se requieren permisos de informática' });
+        return;
+    }
+    next();
+};
+
+// Middleware para verificar rol de patrimonio
+export const requirePatrimonio = (
+    req: AuthenticatedRequest, 
+    res: Response, 
+    next: NextFunction
+): void => {
+    if (req.user?.rol !== 'patrimonio') {
+        res.status(403).json({ error: 'Se requieren permisos de patrimonio' });
         return;
     }
     next();
