@@ -1,72 +1,102 @@
 import { Request, Response } from 'express';
 import db from '../config/db';
 import { ResultSetHeader, RowDataPacket } from 'mysql2';
+import { HistorialHelper } from '../utils/historialHelper';
 
 export class DisponiblesController {
     // Asignar equipo a usuario
     static async asignarEquipo(req: Request, res: Response): Promise<Response> {
         const { id } = req.params;
         const { usuarioId } = req.body;
-        const usuarioSistemaId = (req as any).user.id;
-
-        if (isNaN(Number(id))) {
-            return res.status(400).json({ message: 'ID inválido' });
-        }
 
         if (!usuarioId) {
-            return res.status(400).json({ message: 'usuarioId es requerido' });
+            return res.status(400).json({ error: 'ID de usuario requerido' });
         }
 
+        const usuarioSistemaId = HistorialHelper.obtenerUsuarioSistemaId(req);
+        const conn = await db.promise().getConnection();
+
         try {
-            // Verificar que el equipo existe y está disponible
-            const [equipo] = await db.promise().query<RowDataPacket[]>(
-                'SELECT id, estado_especial FROM equipos WHERE id = ?',
+            await conn.beginTransaction();
+
+            // 1. Obtener estado anterior
+            const [equipoAnterior] = await conn.query<RowDataPacket[]>(
+                'SELECT * FROM equipos WHERE id = ?', 
                 [id]
             );
 
-            if (equipo.length === 0) {
-                return res.status(404).json({ message: 'Equipo no encontrado' });
+            if (equipoAnterior.length === 0) {
+                await conn.rollback();
+                return res.status(404).json({ error: 'Equipo no encontrado' });
             }
 
-            if (equipo[0].estado_especial !== 'disponible') {
-                return res.status(400).json({ message: 'El equipo no está disponible para asignación' });
+            const equipoPrev = equipoAnterior[0];
+
+            // 2. Verificar que el equipo esté disponible
+            if (equipoPrev.estado_especial !== 'disponible') {
+                await conn.rollback();
+                return res.status(400).json({ error: 'El equipo no está disponible para asignación' });
             }
 
-            // Verificar que el usuario existe
-            const [usuario] = await db.promise().query<RowDataPacket[]>(
-                'SELECT id, oficina FROM usuarios WHERE id = ?', 
+            // 3. Verificar que el usuario existe
+            const [usuario] = await conn.query<RowDataPacket[]>(
+                'SELECT * FROM usuarios WHERE id = ?', 
                 [usuarioId]
             );
-            
+
             if (usuario.length === 0) {
-                return res.status(400).json({ message: 'El usuario especificado no existe' });
+                await conn.rollback();
+                return res.status(404).json({ error: 'Usuario no encontrado' });
             }
 
-            // Actualizar equipo
-            await db.promise().query(
-                `UPDATE equipos 
-                 SET usuarioId = ?, 
-                     estado_especial = 'asignado',
-                     oficina = ?
-                 WHERE id = ?`,
-                [usuarioId, usuario[0].oficina, id]
+            // 4. Actualizar equipo
+            const [result] = await conn.query<ResultSetHeader>(
+                'UPDATE equipos SET usuarioId = ?, estado_especial = ? WHERE id = ?',
+                [usuarioId, 'asignado', id]
             );
 
-            // Registrar en historial
-            await db.promise().query(
-                `INSERT INTO historial_cambios 
-                 (tipo_activo, activo_id, accion, detalles, usuario_sistema_id) 
-                 VALUES (?, ?, ?, ?, ?)`,
-                ['equipo', id, 'asignado', `Equipo asignado al usuario ID: ${usuarioId}`, usuarioSistemaId]
+            if (result.affectedRows === 0) {
+                await conn.rollback();
+                return res.status(404).json({ error: 'Equipo no encontrado' });
+            }
+
+            // 5. Registrar en historial
+            const detalles = {
+                prev: {
+                    usuarioId: equipoPrev.usuarioId,
+                    estado_especial: equipoPrev.estado_especial
+                },
+                next: {
+                    usuarioId: usuarioId,
+                    estado_especial: 'asignado'
+                },
+                nota: `Asignado a ${usuario[0].nombres} ${usuario[0].apellidos}`
+            };
+
+            await HistorialHelper.registrarCambio(
+                'equipo',
+                parseInt(id),
+                'asignacion',
+                detalles,
+                usuarioSistemaId
             );
+
+            await conn.commit();
 
             return res.status(200).json({ 
                 message: 'Equipo asignado correctamente',
-                estado_especial: 'asignado'
+                data: {
+                    equipoId: id,
+                    usuario: usuario[0],
+                        estado_especial: 'asignado'
+                }
             });
-        } catch (err) {
+        } catch (err: any) {
+            await conn.rollback();
             console.error('Error al asignar equipo:', err);
-            return res.status(500).json({ error: 'Error al asignar equipo' });
+            return res.status(500).json({ error: 'Error al asignar el equipo' });
+        } finally {
+            conn.release();
         }
     }
 
@@ -74,66 +104,94 @@ export class DisponiblesController {
     static async asignarImpresora(req: Request, res: Response): Promise<Response> {
         const { id } = req.params;
         const { usuarioId } = req.body;
-        const usuarioSistemaId = (req as any).user.id;
-
-        if (isNaN(Number(id))) {
-            return res.status(400).json({ message: 'ID inválido' });
-        }
 
         if (!usuarioId) {
-            return res.status(400).json({ message: 'usuarioId es requerido' });
+            return res.status(400).json({ error: 'ID de usuario requerido' });
         }
 
+        const usuarioSistemaId = HistorialHelper.obtenerUsuarioSistemaId(req);
+        const conn = await db.promise().getConnection();
+
         try {
-            // Verificar que la impresora existe y está disponible
-            const [impresora] = await db.promise().query<RowDataPacket[]>(
-                'SELECT id, estado_especial FROM impresoras WHERE id = ?',
+            await conn.beginTransaction();
+
+            // 1. Obtener estado anterior
+            const [impresoraAnterior] = await conn.query<RowDataPacket[]>(
+                'SELECT * FROM impresoras WHERE id = ?', 
                 [id]
             );
 
-            if (impresora.length === 0) {
-                return res.status(404).json({ message: 'Impresora no encontrada' });
+            if (impresoraAnterior.length === 0) {
+                await conn.rollback();
+                return res.status(404).json({ error: 'Impresora no encontrada' });
             }
 
-            if (impresora[0].estado_especial !== 'disponible') {
-                return res.status(400).json({ message: 'La impresora no está disponible para asignación' });
+            const impresoraPrev = impresoraAnterior[0];
+
+            // 2. Verificar que la impresora esté disponible
+            if (impresoraPrev.estado_especial !== 'disponible') {
+                await conn.rollback();
+                return res.status(400).json({ error: 'La impresora no está disponible para asignación' });
             }
 
-            // Verificar que el usuario existe
-            const [usuario] = await db.promise().query<RowDataPacket[]>(
-                'SELECT id, oficina FROM usuarios WHERE id = ?', 
+            // 3. Verificar que el usuario existe
+            const [usuario] = await conn.query<RowDataPacket[]>(
+                'SELECT * FROM usuarios WHERE id = ?', 
                 [usuarioId]
             );
-            
+
             if (usuario.length === 0) {
-                return res.status(400).json({ message: 'El usuario especificado no existe' });
+                await conn.rollback();
+                return res.status(404).json({ error: 'Usuario no encontrado' });
             }
 
-            // Actualizar impresora
-            await db.promise().query(
-                `UPDATE impresoras 
-                 SET usuarioId = ?, 
-                     estado_especial = 'asignado',
-                     oficina = ?
-                 WHERE id = ?`,
-                [usuarioId, usuario[0].oficina, id]
+            // 4. Actualizar impresora
+            const [result] = await conn.query<ResultSetHeader>(
+                'UPDATE impresoras SET usuarioId = ?, estado_especial = ? WHERE id = ?',
+                [usuarioId, 'asignado', id]
             );
 
-            // Registrar en historial
-            await db.promise().query(
-                `INSERT INTO historial_cambios 
-                 (tipo_activo, activo_id, accion, detalles, usuario_sistema_id) 
-                 VALUES (?, ?, ?, ?, ?)`,
-                ['impresora', id, 'asignada', `Impresora asignada al usuario ID: ${usuarioId}`, usuarioSistemaId]
+            if (result.affectedRows === 0) {
+                await conn.rollback();
+                return res.status(404).json({ error: 'Impresora no encontrada' });
+            }
+
+            // 5. Registrar en historial
+            const detalles = {
+                prev: {
+                    usuarioId: impresoraPrev.usuarioId,
+                    estado_especial: impresoraPrev.estado_especial
+                },
+                next: {
+                    usuarioId: usuarioId,
+                    estado_especial: 'asignado'
+                },
+                nota: `Asignado a ${usuario[0].nombres} ${usuario[0].apellidos}`
+            };
+
+            await HistorialHelper.registrarCambio(
+                'impresora',
+                parseInt(id),
+                'asignacion',
+                detalles,
+                usuarioSistemaId
             );
+
+            await conn.commit();
 
             return res.status(200).json({ 
                 message: 'Impresora asignada correctamente',
-                estado_especial: 'asignado'
+                data: {
+                    impresoraId: id,
+                    usuario: usuario[0]
+                }
             });
-        } catch (err) {
+        } catch (err: any) {
+            await conn.rollback();
             console.error('Error al asignar impresora:', err);
-            return res.status(500).json({ error: 'Error al asignar impresora' });
+            return res.status(500).json({ error: 'Error al asignar la impresora' });
+        } finally {
+            conn.release();
         }
     }
 
