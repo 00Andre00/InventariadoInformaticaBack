@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import db from '../config/db';
 import { ResultSetHeader, RowDataPacket } from 'mysql2';
+import { HistorialHelper } from '../utils/historialHelper';
 
 interface Impresora extends RowDataPacket {
     id: number;
@@ -11,6 +12,7 @@ interface Impresora extends RowDataPacket {
     codigoPatrimonial: string;
     estado: string;
     usuarioId?: number;
+    estado_especial?: string;
 }
 
 interface Usuario extends RowDataPacket {
@@ -57,16 +59,45 @@ class ImpresoraController {
             }
         }
 
+        // Determinar estado_especial basado en si tiene usuario asignado
+        const estadoEspecial = usuarioId ? 'asignado' : 'disponible';
+
         const query = `
             INSERT INTO impresoras 
-            (modelo, ip, mac, oficina, codigoPatrimonial, estado, usuarioId) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (modelo, ip, mac, oficina, codigoPatrimonial, estado, usuarioId, estado_especial) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         try {
             const [result] = await db.promise().query<ResultSetHeader>(query, [
-                modelo, ip, mac, oficina, codigoPatrimonial, estado, usuarioId || null
+                modelo, ip, mac, oficina, codigoPatrimonial, estado, usuarioId || null, estadoEspecial
             ]);
+
+            // Registrar en historial si se asignó a un usuario
+            if (usuarioId) {
+                const detalles = {
+                    prev: {
+                        usuarioId: null,
+                        estado_especial: 'disponible',
+                        estado: estado
+                    },
+                    next: {
+                        usuarioId: usuarioId,
+                        estado_especial: 'asignado',
+                        estado: estado
+                    },
+                    nota: `Creada y asignada a usuario ${usuarioId}`
+                };
+
+                await HistorialHelper.registrarCambio(
+                    'impresora',
+                    result.insertId,
+                    'asignacion',
+                    detalles,
+                    1 // Usuario sistema por defecto
+                );
+            }
+
             return res.status(201).json({ 
                 message: 'Impresora creada correctamente', 
                 id: result.insertId 
@@ -181,45 +212,124 @@ class ImpresoraController {
             return res.status(400).json({ message: 'Formato de MAC inválido.' });
         }
 
-        // Verificar si el usuario existe si se proporciona usuarioId
-        if (usuarioId) {
-            try {
-                const [usuario] = await db.promise().query<Usuario[]>(
+        const usuarioSistemaId = HistorialHelper.obtenerUsuarioSistemaId(req);
+        const conn = await db.promise().getConnection();
+
+        try {
+            await conn.beginTransaction();
+
+            // 1. Obtener estado anterior
+            const [impresoraAnterior] = await conn.query<RowDataPacket[]>(
+                'SELECT * FROM impresoras WHERE id = ?', 
+                [id]
+            );
+
+            if (impresoraAnterior.length === 0) {
+                await conn.rollback();
+                return res.status(404).json({ message: 'Impresora no encontrada' });
+            }
+
+            const impresoraPrev = impresoraAnterior[0];
+
+            // Verificar si el usuario existe si se proporciona usuarioId
+            if (usuarioId) {
+                const [usuario] = await conn.query<Usuario[]>(
                     'SELECT id FROM usuarios WHERE id = ?', 
                     [usuarioId]
                 );
                 if (usuario.length === 0) {
+                    await conn.rollback();
                     return res.status(400).json({ message: 'El usuario especificado no existe' });
                 }
-            } catch (err) {
-                console.error('Error al verificar usuario:', err);
-                return res.status(500).json({ error: 'Error al verificar usuario' });
             }
-        }
 
-        const query = `
-            UPDATE impresoras SET 
-                modelo = ?, ip = ?, mac = ?, oficina = ?, 
-                codigoPatrimonial = ?, estado = ?, usuarioId = ?
-            WHERE id = ?
-        `;
+            // Determinar estado_especial basado en si tiene usuario asignado
+            const estadoEspecial = usuarioId ? 'asignado' : 'disponible';
 
-        try {
-            const [result] = await db.promise().query<ResultSetHeader>(query, [
-                modelo, ip, mac, oficina, codigoPatrimonial, estado, usuarioId || null, id
+            // 2. Actualizar impresora (AGREGAR estado_especial)
+            const query = `
+                UPDATE impresoras SET 
+                    modelo = ?, ip = ?, mac = ?, oficina = ?, 
+                    codigoPatrimonial = ?, estado = ?, usuarioId = ?, estado_especial = ?
+                WHERE id = ?
+            `;
+
+            const [result] = await conn.query<ResultSetHeader>(query, [
+                modelo, ip, mac, oficina, codigoPatrimonial, estado, usuarioId || null, estadoEspecial, id
             ]);
 
             if (result.affectedRows === 0) {
+                await conn.rollback();
                 return res.status(404).json({ message: 'Impresora no encontrada' });
             }
 
+            // 3. Registrar en historial si hay cambios importantes
+            const cambios: string[] = [];
+
+            // Verificar cambios en asignación/desasignación
+            if (impresoraPrev.usuarioId !== (usuarioId || null)) {
+                if (usuarioId) {
+                    cambios.push('asignacion');
+                } else {
+                    cambios.push('desasignacion');
+                }
+            }
+
+            if (impresoraPrev.oficina !== oficina) {
+                cambios.push('traslado');
+            }
+
+            if (impresoraPrev.ip !== ip || impresoraPrev.mac !== mac) {
+                cambios.push('actualizacion_red');
+            }
+
+            if (impresoraPrev.estado !== estado) {
+                cambios.push('cambio_estado');
+            }
+
+            // Registrar cada cambio en el historial
+            for (const accion of cambios) {
+                const detalles = {
+                    prev: {
+                        usuarioId: impresoraPrev.usuarioId,
+                        oficina: impresoraPrev.oficina,
+                        ip: impresoraPrev.ip,
+                        mac: impresoraPrev.mac,
+                        estado: impresoraPrev.estado,
+                        estado_especial: impresoraPrev.estado_especial
+                    },
+                    next: {
+                        usuarioId: usuarioId || null,
+                        oficina: oficina,
+                        ip: ip,
+                        mac: mac,
+                        estado: estado,
+                        estado_especial: estadoEspecial
+                    },
+                    nota: `Actualización desde panel - ${accion}`
+                };
+
+                await HistorialHelper.registrarCambio(
+                    'impresora',
+                    parseInt(id),
+                    accion,
+                    detalles,
+                    usuarioSistemaId
+                );
+            }
+
+            await conn.commit();
+
             return res.status(200).json({ message: 'Impresora actualizada correctamente' });
         } catch (err: any) {
+            await conn.rollback();
             console.error('Error al actualizar la impresora:', err);
             if (err.code === 'ER_DUP_ENTRY') {
                 return res.status(409).json({ error: 'Ya existe una impresora con esa IP o MAC' });
             }
             return res.status(500).json({ error: 'Error al actualizar la impresora' });
+        } finally {
+            conn.release();
         }
     }
 
