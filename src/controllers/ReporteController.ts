@@ -28,78 +28,80 @@ export class ReporteController {
       console.log(`Usuario encontrado: ${usuarioData.nombres}`);
 
       // 1. EQUIPOS ACTUALMENTE ASIGNADOS con fecha de asignación
-  const [equiposActuales] = await db.promise().query<RowDataPacket[]>(
-  `SELECT e.*,
-          (SELECT hc.createdAt 
-           FROM historial_cambios hc 
-           WHERE hc.activo_id = e.id 
-           AND hc.tipo_activo = 'equipo'
-           AND (hc.accion = 'asignacion' OR hc.accion = 'asignado' OR hc.accion LIKE '%asign%')
-           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion
-   FROM equipos e 
-   WHERE e.usuarioId = ? AND e.estado_especial = 'asignado'
-   ORDER BY e.id`,
-  [id]
-);
+      const [equiposActuales] = await db.promise().query<RowDataPacket[]>(
+        `SELECT e.*,
+                (SELECT hc.createdAt 
+                 FROM historial_cambios hc 
+                 WHERE hc.activo_id = e.id 
+                 AND hc.tipo_activo = 'equipo'
+                 AND (hc.accion = 'asignacion' OR hc.accion = 'asignado' OR hc.accion LIKE '%asign%')
+                 ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion
+         FROM equipos e 
+         WHERE e.usuarioId = ? AND e.estado_especial = 'asignado'
+         ORDER BY e.id`,
+        [id]
+      );
 
       // 2. IMPRESORAS ACTUALMENTE ASIGNADAS con fecha de asignación
-const [impresorasActuales] = await db.promise().query<RowDataPacket[]>(
-  `SELECT i.*,
-          (SELECT hc.createdAt 
-           FROM historial_cambios hc 
-           WHERE hc.activo_id = i.id 
-           AND hc.tipo_activo = 'impresora'
-           AND (hc.accion = 'asignacion' OR hc.accion = 'asignada')
-           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion
-   FROM impresoras i 
-   WHERE i.usuarioId = ? 
-   ORDER BY i.id`,
-  [id]
-);
+      const [impresorasActuales] = await db.promise().query<RowDataPacket[]>(
+        `SELECT i.*,
+                (SELECT hc.createdAt 
+                 FROM historial_cambios hc 
+                 WHERE hc.activo_id = i.id 
+                 AND hc.tipo_activo = 'impresora'
+                 AND (hc.accion = 'asignacion' OR hc.accion = 'asignada' OR hc.accion LIKE '%asign%')
+                 ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion
+         FROM impresoras i 
+         WHERE i.usuarioId = ? AND i.estado_especial = 'asignado'
+         ORDER BY i.id`,
+        [id]
+      );
 
-      // Para histórico de equipos
-const [historicoEquipos] = await db.promise().query<RowDataPacket[]>(
-  `SELECT e.*,
-          (SELECT hc.createdAt FROM historial_cambios hc 
-           WHERE hc.activo_id = e.id AND hc.tipo_activo = 'equipo' 
-           AND (hc.accion = 'asignacion' OR hc.accion = 'asignado')
-           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion,
-          (SELECT hc.createdAt FROM historial_cambios hc 
-           WHERE hc.activo_id = e.id AND hc.tipo_activo = 'equipo' 
-           AND (hc.accion = 'revision' OR hc.accion = 'baja' OR hc.accion = 'enviado_a_revision' OR hc.accion = 'dado_de_baja') 
-           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_desasignacion
-   FROM equipos e 
-   WHERE e.id IN (
-     SELECT DISTINCT activo_id FROM historial_cambios 
-     WHERE tipo_activo = 'equipo' 
-     AND (detalles LIKE ? OR detalles LIKE ? OR accion = 'asignado')
-   )
-   AND e.estado_especial != 'asignado'
-   ORDER BY fecha_desasignacion DESC, fecha_asignacion DESC`,
-  [`%${usuarioData.nombres}%`, `%${usuarioData.nombres} ${usuarioData.apellidos}%`]
-);
+      // 3. HISTÓRICO DE EQUIPOS (solo las que NO están asignadas actualmente)
+      const [historicoEquipos] = await db.promise().query<RowDataPacket[]>(
+        `SELECT e.*,
+                (SELECT hc.createdAt FROM historial_cambios hc 
+                 WHERE hc.activo_id = e.id AND hc.tipo_activo = 'equipo' 
+                 AND (hc.accion = 'asignacion' OR hc.accion = 'asignado' OR hc.accion LIKE '%asign%')
+                 ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion,
+                (SELECT hc.createdAt FROM historial_cambios hc 
+                 WHERE hc.activo_id = e.id AND hc.tipo_activo = 'equipo' 
+                 AND (hc.accion = 'revision' OR hc.accion = 'baja' OR hc.accion = 'enviado_a_revision' OR hc.accion = 'dado_de_baja' OR hc.accion = 'desasignacion') 
+                 ORDER BY hc.createdAt DESC LIMIT 1) as fecha_desasignacion
+         FROM equipos e 
+         WHERE e.id IN (
+           SELECT DISTINCT activo_id FROM historial_cambios 
+           WHERE tipo_activo = 'equipo' 
+           AND (detalles LIKE ? OR detalles LIKE ? OR accion LIKE '%asign%')
+         )
+         AND (e.usuarioId != ? OR e.usuarioId IS NULL)
+         AND e.estado_especial != 'asignado'
+         ORDER BY fecha_desasignacion DESC, fecha_asignacion DESC`,
+        [`%${usuarioData.nombres}%`, `%${usuarioData.nombres} ${usuarioData.apellidos}%`, id]
+      );
 
       // 4. HISTÓRICO DE IMPRESORAS (solo las que NO están asignadas actualmente)
-const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
-  `SELECT i.*,
-          (SELECT hc.createdAt FROM historial_cambios hc 
-           WHERE hc.activo_id = i.id AND hc.tipo_activo = 'impresora' 
-           AND (hc.accion = 'asignacion' OR hc.accion = 'asignada')
-           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion,
-          (SELECT hc.createdAt FROM historial_cambios hc 
-           WHERE hc.activo_id = i.id AND hc.tipo_activo = 'impresora' 
-           AND (hc.accion = 'revision' OR hc.accion = 'baja' OR hc.accion = 'enviado_a_revision' OR hc.accion = 'dada_de_baja') 
-           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_desasignacion
-   FROM impresoras i 
-   WHERE i.id IN (
-     SELECT DISTINCT activo_id FROM historial_cambios 
-     WHERE tipo_activo = 'impresora' 
-     AND (detalles LIKE ? OR detalles LIKE ?)
-   )
-   AND i.estado_especial != 'asignado'
-   ORDER BY fecha_desasignacion DESC, fecha_asignacion DESC`,
-  [`%${usuarioData.nombres}%`, `%${usuarioData.nombres} ${usuarioData.apellidos}%`]
-);
+      const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
+        `SELECT i.*,
+                (SELECT hc.createdAt FROM historial_cambios hc 
+                 WHERE hc.activo_id = i.id AND hc.tipo_activo = 'impresora' 
+                 AND (hc.accion = 'asignacion' OR hc.accion = 'asignada' OR hc.accion LIKE '%asign%')
+                 ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion,
+                (SELECT hc.createdAt FROM historial_cambios hc 
+                 WHERE hc.activo_id = i.id AND hc.tipo_activo = 'impresora' 
+                 AND (hc.accion = 'revision' OR hc.accion = 'baja' OR hc.accion = 'enviado_a_revision' OR hc.accion = 'dada_de_baja' OR hc.accion = 'desasignacion') 
+                 ORDER BY hc.createdAt DESC LIMIT 1) as fecha_desasignacion
+         FROM impresoras i 
+         WHERE i.id IN (
+           SELECT DISTINCT activo_id FROM historial_cambios 
+           WHERE tipo_activo = 'impresora' 
+           AND (detalles LIKE ? OR detalles LIKE ? OR accion LIKE '%asign%')
+         )
+         AND (i.usuarioId != ? OR i.usuarioId IS NULL)
+         AND i.estado_especial != 'asignado'
+         ORDER BY fecha_desasignacion DESC, fecha_asignacion DESC`,
+        [`%${usuarioData.nombres}%`, `%${usuarioData.nombres} ${usuarioData.apellidos}%`, id]
+      );
 
       console.log("=== DEBUG REPORTE ===");
       console.log("Usuario:", usuarioData.nombres, usuarioData.apellidos);
@@ -144,12 +146,13 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
       });
       console.log("=== FIN DEBUG ===");
 
-      // Añade esto para ver qué hay en el historial
+      // Debug para ver qué hay en el historial
       const [historialDebug] = await db.promise().query<RowDataPacket[]>(
-        `SELECT * FROM historial_cambios 
-   WHERE tipo_activo IN ('equipo', 'impresora') 
-   AND (accion = 'asignacion' OR accion = 'revision' OR accion = 'baja')
-   ORDER BY createdAt DESC LIMIT 10`
+        `SELECT tipo_activo, activo_id, accion, detalles, createdAt 
+         FROM historial_cambios 
+         WHERE tipo_activo IN ('equipo', 'impresora') 
+         AND (accion LIKE '%asign%' OR accion = 'revision' OR accion = 'baja' OR accion = 'desasignacion')
+         ORDER BY createdAt DESC LIMIT 10`
       );
       console.log("Últimos 10 registros de historial:", historialDebug);
 
@@ -160,40 +163,41 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
           `Histórico impresoras: ${historicoImpresoras.length}`
       );
 
-console.log('IDs de equipos encontrados en histórico:', historicoEquipos.map(e => e.id));
-console.log('IDs de impresoras encontrados en histórico:', historicoImpresoras.map(i => i.id));
+      console.log('IDs de equipos encontrados en histórico:', historicoEquipos.map(e => e.id));
+      console.log('IDs de impresoras encontrados en histórico:', historicoImpresoras.map(i => i.id));
 
-// Debug para ver qué registros encuentra para cada equipo histórico
-for (const equipo of historicoEquipos) {
-  const [asignaciones] = await db.promise().query<RowDataPacket[]>(
-    `SELECT accion, createdAt, detalles FROM historial_cambios 
-     WHERE activo_id = ? AND tipo_activo = 'equipo' 
-     AND (accion = 'asignacion' OR accion = 'asignado')
-     ORDER BY createdAt DESC`,
-    [equipo.id]
-  );
-  console.log(`Registros de asignación para equipo ${equipo.id}:`, asignaciones);
-}
+      // Debug para ver qué registros encuentra para cada equipo histórico
+      for (const equipo of historicoEquipos) {
+        const [asignaciones] = await db.promise().query<RowDataPacket[]>(
+          `SELECT accion, createdAt, detalles FROM historial_cambios 
+           WHERE activo_id = ? AND tipo_activo = 'equipo' 
+           AND (accion LIKE '%asign%' OR accion = 'desasignacion')
+           ORDER BY createdAt DESC`,
+          [equipo.id]
+        );
+        console.log(`Registros de asignación para equipo ${equipo.id}:`, asignaciones);
+      }
 
-// Debug específico para cada equipo histórico
-historicoEquipos.forEach((eq, i) => {
-  console.log(`Histórico equipo ${i} (ID: ${eq.id}):`, {
-    fecha_asignacion: eq.fecha_asignacion,
-    fecha_desasignacion: eq.fecha_desasignacion,
-    estado_especial: eq.estado_especial
-  });
-});
+      // Debug específico para cada equipo histórico
+      historicoEquipos.forEach((eq, i) => {
+        console.log(`Histórico equipo ${i} (ID: ${eq.id}):`, {
+          fecha_asignacion: eq.fecha_asignacion,
+          fecha_desasignacion: eq.fecha_desasignacion,
+          estado_especial: eq.estado_especial,
+          usuarioId: eq.usuarioId
+        });
+      });
 
-console.log('Impresoras con usuarioId:', impresorasActuales.map(i => ({
-  id: i.id, 
-  usuarioId: i.usuarioId,
-  estado_especial: i.estado_especial
-})));
+      console.log('Impresoras con usuarioId:', impresorasActuales.map(i => ({
+        id: i.id, 
+        usuarioId: i.usuarioId,
+        estado_especial: i.estado_especial
+      })));
 
       console.log('Búsquedas:', [
-  `%${usuarioData.nombres}%`, 
-  `%${usuarioData.nombres} ${usuarioData.apellidos}%`
-]);
+        `%${usuarioData.nombres}%`, 
+        `%${usuarioData.nombres} ${usuarioData.apellidos}%`
+      ]);
 
       // Crear PDF
       const doc = new PDFDocument({
@@ -435,8 +439,7 @@ console.log('Impresoras con usuarioId:', impresorasActuales.map(i => ({
     }
   }
 
-  // Métodos auxiliares para tablas
-
+  // Métodos auxiliares para tablas (se mantienen igual)
   private static agregarTablaUsuario(
     doc: PDFKit.PDFDocument,
     usuario: any,
