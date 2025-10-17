@@ -10,15 +10,30 @@ export class HistorialHelper {
     usuarioSistemaId: number
   ): Promise<void> {
     try {
-      await db.promise().query(
-        `INSERT INTO historial_cambios 
-         (tipo_activo, activo_id, accion, detalles, usuario_sistema_id) 
-         VALUES (?, ?, ?, ?, ?)`,
+      console.log('=== DEBUG HISTORIAL HELPER ===');
+      console.log('Insertando en historial:', {
+        tipoActivo,
+        activoId,
+        accion,
+        detalles,
+        usuarioSistemaId
+      });
+      
+      const query = `
+        INSERT INTO historial_cambios 
+        (tipo_activo, activo_id, accion, detalles, usuario_sistema_id) 
+        VALUES (?, ?, ?, ?, ?)
+      `;
+      
+      const [result] = await db.promise().query(
+        query,
         [tipoActivo, activoId, accion, JSON.stringify(detalles), usuarioSistemaId]
       );
-      console.log(`Historial registrado: ${tipoActivo} ${activoId} - ${accion}`);
-    } catch (error) {
-      console.error('Error al registrar historial:', error);
+      
+      console.log(`✅ Historial registrado exitosamente. ID: ${(result as any).insertId}`);
+      console.log(`✅ ${tipoActivo} ${activoId} - ${accion}`);
+    } catch (error: any) {
+      console.error('❌ Error al registrar historial:', error.message);
       throw error;
     }
   }
@@ -26,6 +41,12 @@ export class HistorialHelper {
   // Método para obtener el usuario del sistema del request
   static obtenerUsuarioSistemaId(req: Request): number {
     const user = (req as any).user;
-    return user?.id || 1; // Fallback al admin si no está disponible
+    console.log('=== DEBUG USUARIO SISTEMA ===');
+    console.log('User object:', user);
+    
+    // Si no hay usuario autenticado, usar un valor por defecto para testing
+    const userId = user?.id || 1;
+    console.log('Usuario sistema ID a usar:', userId);
+    return userId;
   }
 }
