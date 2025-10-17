@@ -32,7 +32,7 @@ export class DisponiblesController {
 
             const equipoPrev = equipoAnterior[0];
 
-            // 2. Verificar que el equipo esté disponible
+            // 2. Verificar que el equipo esté disponible (CORREGIDO: estado_especial)
             if (equipoPrev.estado_especial !== 'disponible') {
                 await conn.rollback();
                 return res.status(400).json({ error: 'El equipo no está disponible para asignación' });
@@ -49,7 +49,7 @@ export class DisponiblesController {
                 return res.status(404).json({ error: 'Usuario no encontrado' });
             }
 
-            // 4. Actualizar equipo
+            // 4. Actualizar equipo (CORREGIDO: estado_especial)
             const [result] = await conn.query<ResultSetHeader>(
                 'UPDATE equipos SET usuarioId = ?, estado_especial = ? WHERE id = ?',
                 [usuarioId, 'asignado', id]
@@ -60,15 +60,17 @@ export class DisponiblesController {
                 return res.status(404).json({ error: 'Equipo no encontrado' });
             }
 
-            // 5. Registrar en historial
+            // 5. Registrar en historial (CORREGIDO: estado_especial)
             const detalles = {
                 prev: {
                     usuarioId: equipoPrev.usuarioId,
-                    estado_especial: equipoPrev.estado_especial
+                    estado_especial: equipoPrev.estado_especial,
+                    estado: equipoPrev.estado // También registrar el estado físico por si cambia
                 },
                 next: {
                     usuarioId: usuarioId,
-                    estado_especial: 'asignado'
+                    estado_especial: 'asignado',
+                    estado: equipoPrev.estado // Mantener el mismo estado físico
                 },
                 nota: `Asignado a ${usuario[0].nombres} ${usuario[0].apellidos}`
             };
@@ -88,7 +90,7 @@ export class DisponiblesController {
                 data: {
                     equipoId: id,
                     usuario: usuario[0],
-                        estado_especial: 'asignado'
+                    estado_especial: 'asignado'
                 }
             });
         } catch (err: any) {
@@ -128,7 +130,7 @@ export class DisponiblesController {
 
             const impresoraPrev = impresoraAnterior[0];
 
-            // 2. Verificar que la impresora esté disponible
+            // 2. Verificar que la impresora esté disponible (CORREGIDO: estado_especial)
             if (impresoraPrev.estado_especial !== 'disponible') {
                 await conn.rollback();
                 return res.status(400).json({ error: 'La impresora no está disponible para asignación' });
@@ -145,7 +147,7 @@ export class DisponiblesController {
                 return res.status(404).json({ error: 'Usuario no encontrado' });
             }
 
-            // 4. Actualizar impresora
+            // 4. Actualizar impresora (CORREGIDO: estado_especial)
             const [result] = await conn.query<ResultSetHeader>(
                 'UPDATE impresoras SET usuarioId = ?, estado_especial = ? WHERE id = ?',
                 [usuarioId, 'asignado', id]
@@ -156,15 +158,17 @@ export class DisponiblesController {
                 return res.status(404).json({ error: 'Impresora no encontrada' });
             }
 
-            // 5. Registrar en historial
+            // 5. Registrar en historial (CORREGIDO: estado_especial)
             const detalles = {
                 prev: {
                     usuarioId: impresoraPrev.usuarioId,
-                    estado_especial: impresoraPrev.estado_especial
+                    estado_especial: impresoraPrev.estado_especial,
+                    estado: impresoraPrev.estado
                 },
                 next: {
                     usuarioId: usuarioId,
-                    estado_especial: 'asignado'
+                    estado_especial: 'asignado',
+                    estado: impresoraPrev.estado
                 },
                 nota: `Asignado a ${usuario[0].nombres} ${usuario[0].apellidos}`
             };
@@ -183,7 +187,8 @@ export class DisponiblesController {
                 message: 'Impresora asignada correctamente',
                 data: {
                     impresoraId: id,
-                    usuario: usuario[0]
+                    usuario: usuario[0],
+                    estado_especial: 'asignado'
                 }
             });
         } catch (err: any) {
@@ -195,7 +200,7 @@ export class DisponiblesController {
         }
     }
 
-    // Obtener equipos disponibles
+    // Obtener equipos disponibles (CORREGIDO: estado_especial)
     static async obtenerEquiposDisponibles(req: Request, res: Response): Promise<Response> {
         try {
             const [rows] = await db.promise().query<RowDataPacket[]>(
@@ -214,7 +219,7 @@ export class DisponiblesController {
         }
     }
 
-    // Obtener impresoras disponibles
+    // Obtener impresoras disponibles (CORREGIDO: estado_especial)
     static async obtenerImpresorasDisponibles(req: Request, res: Response): Promise<Response> {
         try {
             const [rows] = await db.promise().query<RowDataPacket[]>(
