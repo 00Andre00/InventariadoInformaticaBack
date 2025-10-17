@@ -1,272 +1,761 @@
-import { Request, Response } from 'express';
-import db from '../config/db';
-import PDFDocument from 'pdfkit';
-import { RowDataPacket } from 'mysql2';
+import { Request, Response } from "express";
+import db from "../config/db";
+import PDFDocument from "pdfkit";
+import { RowDataPacket } from "mysql2";
+import { HistorialHelper } from "../utils/historialHelper";
 
 export class ReporteController {
-    // Generar reporte de cambios
-    static async generarReporteCambio(req: Request, res: Response): Promise<void> {
-        const { tipo, id } = req.params;
+  static async generarReporteUsuario(
+    req: Request,
+    res: Response
+  ): Promise<void> {
+    const { id } = req.params;
 
-        try {
-            let datos: any = {};
+    try {
+      console.log(`Generando reporte para usuario ID: ${id}`);
 
-            if (tipo === 'equipo') {
-                const [equipo] = await db.promise().query<RowDataPacket[]>(
-                    `SELECT e.*, 
-                            CONCAT(u.nombres, ' ', u.apellidos) as usuario_actual,
-                            u.dni, u.oficina,
-                            e.historial_duenos
-                     FROM equipos e
-                     LEFT JOIN usuarios u ON e.usuarioId = u.id
-                     WHERE e.id = ?`,
-                    [id]
-                );
-                datos = equipo[0];
-            } else if (tipo === 'impresora') {
-                const [impresora] = await db.promise().query<RowDataPacket[]>(
-                    `SELECT i.*, 
-                            CONCAT(u.nombres, ' ', u.apellidos) as usuario_actual,
-                            u.dni, u.oficina,
-                            i.historial_duenos
-                     FROM impresoras i
-                     LEFT JOIN usuarios u ON i.usuarioId = u.id
-                     WHERE i.id = ?`,
-                    [id]
-                );
-                datos = impresora[0];
-            }
+      const [usuario] = await db
+        .promise()
+        .query<RowDataPacket[]>("SELECT * FROM usuarios WHERE id = ?", [id]);
 
-            if (!datos) {
-                res.status(404).json({ error: `${tipo} no encontrado` });
-                return;
-            }
+      if (usuario.length === 0) {
+        console.log("Usuario no encontrado");
+        res.status(404).json({ error: "Usuario no encontrado" });
+        return;
+      }
 
-            // Crear PDF
-            const doc = new PDFDocument();
-            res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', `attachment; filename=reporte-${tipo}-${id}.pdf`);
-            
-            doc.pipe(res);
+      const usuarioData = usuario[0];
+      console.log(`Usuario encontrado: ${usuarioData.nombres}`);
 
-            // Contenido del PDF
-            doc.fontSize(20).text('REPORTE DE CAMBIO', 100, 100);
-            doc.fontSize(12).text(`Tipo: ${tipo.toUpperCase()}`, 100, 150);
-            doc.text(`ID: ${id}`, 100, 170);
-            doc.text(`Fecha: ${new Date().toLocaleDateString('es-PE')}`, 100, 190);
-            doc.text(`Hora: ${new Date().toLocaleTimeString('es-PE')}`, 100, 210);
-            
-            let yPosition = 250;
+      // 1. EQUIPOS ACTUALMENTE ASIGNADOS con fecha de asignación
+  const [equiposActuales] = await db.promise().query<RowDataPacket[]>(
+  `SELECT e.*,
+          (SELECT hc.createdAt 
+           FROM historial_cambios hc 
+           WHERE hc.activo_id = e.id 
+           AND hc.tipo_activo = 'equipo'
+           AND (hc.accion = 'asignacion' OR hc.accion = 'asignado' OR hc.accion LIKE '%asign%')
+           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion
+   FROM equipos e 
+   WHERE e.usuarioId = ? AND e.estado_especial = 'asignado'
+   ORDER BY e.id`,
+  [id]
+);
 
-            if (tipo === 'equipo' && datos) {
-                doc.text(`Equipo: ${datos.marca} ${datos.modelo}`, 100, yPosition);
-                yPosition += 20;
-                doc.text(`Código Patrimonial: ${datos.codigoPatrimonial || 'N/A'}`, 100, yPosition);
-                yPosition += 20;
-                doc.text(`Usuario Actual: ${datos.usuario_actual || 'No asignado'}`, 100, yPosition);
-                yPosition += 20;
-                doc.text(`Estado: ${datos.estado}`, 100, yPosition);
-                yPosition += 20;
-                doc.text(`IP: ${datos.ip}`, 100, yPosition);
-                yPosition += 20;
-                doc.text(`MAC: ${datos.mac}`, 100, yPosition);
-                yPosition += 20;
-                doc.text(`Procesador: ${datos.procesador}`, 100, yPosition);
-                yPosition += 20;
-                doc.text(`RAM: ${datos.ram}`, 100, yPosition);
-                yPosition += 20;
-                doc.text(`Almacenamiento: ${datos.almacenamiento}`, 100, yPosition);
-                yPosition += 20;
-                
-                // Historial
-                if (datos.historial_duenos) {
-                    yPosition += 20;
-                    doc.text('HISTORIAL:', 100, yPosition);
-                    yPosition += 20;
-                    
-                    const historial = datos.historial_duenos.split('|').filter((item: string) => item.trim());
-                    historial.forEach((item: string, index: number) => {
-                        if (yPosition > 700) {
-                            doc.addPage();
-                            yPosition = 100;
-                        }
-                        doc.text(`${index + 1}. ${item.trim()}`, 120, yPosition);
-                        yPosition += 15;
-                    });
-                }
-            } else if (tipo === 'impresora' && datos) {
-                doc.text(`Impresora: ${datos.modelo}`, 100, yPosition);
-                yPosition += 20;
-                doc.text(`Código Patrimonial: ${datos.codigoPatrimonial || 'N/A'}`, 100, yPosition);
-                yPosition += 20;
-                doc.text(`Usuario Actual: ${datos.usuario_actual || 'No asignado'}`, 100, yPosition);
-                yPosition += 20;
-                doc.text(`Estado: ${datos.estado}`, 100, yPosition);
-                yPosition += 20;
-                doc.text(`IP: ${datos.ip}`, 100, yPosition);
-                yPosition += 20;
-                doc.text(`MAC: ${datos.mac}`, 100, yPosition);
-                yPosition += 20;
-                
-                // Historial
-                if (datos.historial_duenos) {
-                    yPosition += 20;
-                    doc.text('HISTORIAL:', 100, yPosition);
-                    yPosition += 20;
-                    
-                    const historial = datos.historial_duenos.split('|').filter((item: string) => item.trim());
-                    historial.forEach((item: string, index: number) => {
-                        if (yPosition > 700) {
-                            doc.addPage();
-                            yPosition = 100;
-                        }
-                        doc.text(`${index + 1}. ${item.trim()}`, 120, yPosition);
-                        yPosition += 15;
-                    });
-                }
-            }
+      // 2. IMPRESORAS ACTUALMENTE ASIGNADAS con fecha de asignación
+const [impresorasActuales] = await db.promise().query<RowDataPacket[]>(
+  `SELECT i.*,
+          (SELECT hc.createdAt 
+           FROM historial_cambios hc 
+           WHERE hc.activo_id = i.id 
+           AND hc.tipo_activo = 'impresora'
+           AND (hc.accion = 'asignacion' OR hc.accion = 'asignada')
+           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion
+   FROM impresoras i 
+   WHERE i.usuarioId = ? 
+   ORDER BY i.id`,
+  [id]
+);
 
-            doc.end();
-        } catch (err) {
-            console.error('Error al generar reporte:', err);
-            res.status(500).json({ error: 'Error al generar reporte' });
+      // Para histórico de equipos
+const [historicoEquipos] = await db.promise().query<RowDataPacket[]>(
+  `SELECT e.*,
+          (SELECT hc.createdAt FROM historial_cambios hc 
+           WHERE hc.activo_id = e.id AND hc.tipo_activo = 'equipo' 
+           AND (hc.accion = 'asignacion' OR hc.accion = 'asignado')
+           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion,
+          (SELECT hc.createdAt FROM historial_cambios hc 
+           WHERE hc.activo_id = e.id AND hc.tipo_activo = 'equipo' 
+           AND (hc.accion = 'revision' OR hc.accion = 'baja' OR hc.accion = 'enviado_a_revision' OR hc.accion = 'dado_de_baja') 
+           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_desasignacion
+   FROM equipos e 
+   WHERE e.id IN (
+     SELECT DISTINCT activo_id FROM historial_cambios 
+     WHERE tipo_activo = 'equipo' 
+     AND (detalles LIKE ? OR detalles LIKE ? OR accion = 'asignado')
+   )
+   AND e.estado_especial != 'asignado'
+   ORDER BY fecha_desasignacion DESC, fecha_asignacion DESC`,
+  [`%${usuarioData.nombres}%`, `%${usuarioData.nombres} ${usuarioData.apellidos}%`]
+);
+
+      // 4. HISTÓRICO DE IMPRESORAS (solo las que NO están asignadas actualmente)
+const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
+  `SELECT i.*,
+          (SELECT hc.createdAt FROM historial_cambios hc 
+           WHERE hc.activo_id = i.id AND hc.tipo_activo = 'impresora' 
+           AND (hc.accion = 'asignacion' OR hc.accion = 'asignada')
+           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion,
+          (SELECT hc.createdAt FROM historial_cambios hc 
+           WHERE hc.activo_id = i.id AND hc.tipo_activo = 'impresora' 
+           AND (hc.accion = 'revision' OR hc.accion = 'baja' OR hc.accion = 'enviado_a_revision' OR hc.accion = 'dada_de_baja') 
+           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_desasignacion
+   FROM impresoras i 
+   WHERE i.id IN (
+     SELECT DISTINCT activo_id FROM historial_cambios 
+     WHERE tipo_activo = 'impresora' 
+     AND (detalles LIKE ? OR detalles LIKE ?)
+   )
+   AND i.estado_especial != 'asignado'
+   ORDER BY fecha_desasignacion DESC, fecha_asignacion DESC`,
+  [`%${usuarioData.nombres}%`, `%${usuarioData.nombres} ${usuarioData.apellidos}%`]
+);
+
+      console.log("=== DEBUG REPORTE ===");
+      console.log("Usuario:", usuarioData.nombres, usuarioData.apellidos);
+      console.log("Equipos actuales:", equiposActuales.length);
+      equiposActuales.forEach((eq, i) => {
+        console.log(`Equipo ${i}:`, {
+          id: eq.id,
+          codigo: eq.codigoPatrimonial,
+          fecha_asignacion: eq.fecha_asignacion,
+          tieneFecha: !!eq.fecha_asignacion,
+        });
+      });
+
+      console.log("Impresoras actuales:", impresorasActuales.length);
+      impresorasActuales.forEach((imp, i) => {
+        console.log(`Impresora ${i}:`, {
+          id: imp.id,
+          codigo: imp.codigoPatrimonial,
+          fecha_asignacion: imp.fecha_asignacion,
+          tieneFecha: !!imp.fecha_asignacion,
+        });
+      });
+
+      console.log("Histórico equipos:", historicoEquipos.length);
+      historicoEquipos.forEach((eq, i) => {
+        console.log(`Histórico equipo ${i}:`, {
+          id: eq.id,
+          codigo: eq.codigoPatrimonial,
+          fecha_asignacion: eq.fecha_asignacion,
+          fecha_desasignacion: eq.fecha_desasignacion,
+        });
+      });
+
+      console.log("Histórico impresoras:", historicoImpresoras.length);
+      historicoImpresoras.forEach((imp, i) => {
+        console.log(`Histórico impresora ${i}:`, {
+          id: imp.id,
+          codigo: imp.codigoPatrimonial,
+          fecha_asignacion: imp.fecha_asignacion,
+          fecha_desasignacion: imp.fecha_desasignacion,
+        });
+      });
+      console.log("=== FIN DEBUG ===");
+
+      // Añade esto para ver qué hay en el historial
+      const [historialDebug] = await db.promise().query<RowDataPacket[]>(
+        `SELECT * FROM historial_cambios 
+   WHERE tipo_activo IN ('equipo', 'impresora') 
+   AND (accion = 'asignacion' OR accion = 'revision' OR accion = 'baja')
+   ORDER BY createdAt DESC LIMIT 10`
+      );
+      console.log("Últimos 10 registros de historial:", historialDebug);
+
+      console.log(
+        `Datos obtenidos - Equipos actuales: ${equiposActuales.length}, ` +
+          `Impresoras actuales: ${impresorasActuales.length}, ` +
+          `Histórico equipos: ${historicoEquipos.length}, ` +
+          `Histórico impresoras: ${historicoImpresoras.length}`
+      );
+
+console.log('IDs de equipos encontrados en histórico:', historicoEquipos.map(e => e.id));
+console.log('IDs de impresoras encontrados en histórico:', historicoImpresoras.map(i => i.id));
+
+// Debug para ver qué registros encuentra para cada equipo histórico
+for (const equipo of historicoEquipos) {
+  const [asignaciones] = await db.promise().query<RowDataPacket[]>(
+    `SELECT accion, createdAt, detalles FROM historial_cambios 
+     WHERE activo_id = ? AND tipo_activo = 'equipo' 
+     AND (accion = 'asignacion' OR accion = 'asignado')
+     ORDER BY createdAt DESC`,
+    [equipo.id]
+  );
+  console.log(`Registros de asignación para equipo ${equipo.id}:`, asignaciones);
+}
+
+// Debug específico para cada equipo histórico
+historicoEquipos.forEach((eq, i) => {
+  console.log(`Histórico equipo ${i} (ID: ${eq.id}):`, {
+    fecha_asignacion: eq.fecha_asignacion,
+    fecha_desasignacion: eq.fecha_desasignacion,
+    estado_especial: eq.estado_especial
+  });
+});
+
+console.log('Impresoras con usuarioId:', impresorasActuales.map(i => ({
+  id: i.id, 
+  usuarioId: i.usuarioId,
+  estado_especial: i.estado_especial
+})));
+
+      console.log('Búsquedas:', [
+  `%${usuarioData.nombres}%`, 
+  `%${usuarioData.nombres} ${usuarioData.apellidos}%`
+]);
+
+      // Crear PDF
+      const doc = new PDFDocument({
+        margin: 50,
+        bufferPages: true,
+      });
+
+      // Configurar headers ANTES de empezar a escribir
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=reporte-usuario-${usuarioData.dni}.pdf`
+      );
+
+      doc.pipe(res);
+
+      try {
+        // Header
+        doc
+          .fillColor("#1f2937")
+          .fontSize(20)
+          .font("Helvetica-Bold")
+          .text("SISTEMA DE INVENTARIO - REPORTE DE USUARIO", 50, 50);
+
+        doc
+          .fillColor("#6b7280")
+          .fontSize(12)
+          .font("Helvetica")
+          .text(`Generado: ${new Date().toLocaleString("es-PE")}`, 50, 80);
+
+        // Línea separadora
+        doc
+          .moveTo(50, 100)
+          .lineTo(550, 100)
+          .strokeColor("#e5e7eb")
+          .lineWidth(1)
+          .stroke();
+
+        let yPosition = 130;
+
+        // 1. INFORMACIÓN DEL USUARIO
+        doc
+          .fillColor("#1f2937")
+          .fontSize(16)
+          .font("Helvetica-Bold")
+          .text("INFORMACIÓN DEL USUARIO", 50, yPosition);
+        yPosition += 30;
+
+        ReporteController.agregarTablaUsuario(doc, usuarioData, yPosition);
+        yPosition += 120;
+
+        // 2. EQUIPOS ACTUALMENTE ASIGNADOS
+        if (equiposActuales.length > 0) {
+          if (yPosition > 600) {
+            doc.addPage();
+            yPosition = 50;
+          }
+
+          doc
+            .fillColor("#1f2937")
+            .fontSize(16)
+            .font("Helvetica-Bold")
+            .text("EQUIPOS ACTUALMENTE ASIGNADOS", 50, yPosition);
+          yPosition += 25;
+
+          doc
+            .fillColor("#6b7280")
+            .fontSize(10)
+            .font("Helvetica")
+            .text(
+              "Equipos que el usuario tiene asignados actualmente:",
+              50,
+              yPosition
+            );
+          yPosition += 20;
+
+          ReporteController.agregarTablaEquiposActuales(
+            doc,
+            equiposActuales,
+            yPosition
+          );
+          yPosition += equiposActuales.length * 20 + 40;
+        } else {
+          doc
+            .fillColor("#6b7280")
+            .fontSize(12)
+            .font("Helvetica")
+            .text(
+              "El usuario no tiene equipos asignados actualmente.",
+              50,
+              yPosition
+            );
+          yPosition += 30;
         }
-    }
 
-    // Generar reporte de usuario
-    static async generarReporteUsuario(req: Request, res: Response): Promise<void> {
-        const { id } = req.params;
+        // 3. IMPRESORAS ACTUALMENTE ASIGNADAS
+        if (impresorasActuales.length > 0) {
+          if (yPosition > 600) {
+            doc.addPage();
+            yPosition = 50;
+          }
 
-        try {
-            const [usuario] = await db.promise().query<RowDataPacket[]>(
-                'SELECT * FROM usuarios WHERE id = ?',
-                [id]
+          doc
+            .fillColor("#1f2937")
+            .fontSize(16)
+            .font("Helvetica-Bold")
+            .text("IMPRESORAS ACTUALMENTE ASIGNADAS", 50, yPosition);
+          yPosition += 25;
+
+          doc
+            .fillColor("#6b7280")
+            .fontSize(10)
+            .font("Helvetica")
+            .text(
+              "Impresoras que el usuario tiene asignadas actualmente:",
+              50,
+              yPosition
             );
+          yPosition += 20;
 
-            if (usuario.length === 0) {
-                res.status(404).json({ error: 'Usuario no encontrado' });
-                return;
-            }
-
-            const [equipos] = await db.promise().query<RowDataPacket[]>(
-                `SELECT tipo, marca, modelo, codigoPatrimonial, estado, estado_especial, historial_duenos 
-                 FROM equipos WHERE usuarioId = ?`,
-                [id]
+          ReporteController.agregarTablaImpresorasActuales(
+            doc,
+            impresorasActuales,
+            yPosition
+          );
+          yPosition += impresorasActuales.length * 20 + 40;
+        } else {
+          doc
+            .fillColor("#6b7280")
+            .fontSize(12)
+            .font("Helvetica")
+            .text(
+              "El usuario no tiene impresoras asignadas actualmente.",
+              50,
+              yPosition
             );
-
-            const [impresoras] = await db.promise().query<RowDataPacket[]>(
-                `SELECT modelo, codigoPatrimonial, estado, estado_especial, historial_duenos 
-                 FROM impresoras WHERE usuarioId = ?`,
-                [id]
-            );
-
-            // Crear PDF
-            const doc = new PDFDocument();
-            res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', `attachment; filename=reporte-usuario-${id}.pdf`);
-            
-            doc.pipe(res);
-
-            // Contenido del PDF
-            const usuarioData = usuario[0];
-            let yPosition = 100;
-            
-            doc.fontSize(20).text('REPORTE DE USUARIO', 100, yPosition);
-            yPosition += 60;
-            
-            doc.fontSize(12).text(`Nombre: ${usuarioData.nombres} ${usuarioData.apellidos}`, 100, yPosition);
-            yPosition += 20;
-            doc.text(`DNI: ${usuarioData.dni}`, 100, yPosition);
-            yPosition += 20;
-            doc.text(`Oficina: ${usuarioData.oficina}`, 100, yPosition);
-            yPosition += 20;
-            doc.text(`Tipo Contrato: ${usuarioData.tipoContrato}`, 100, yPosition);
-            yPosition += 20;
-            doc.text(`Fecha de Registro: ${new Date(usuarioData.createdAt).toLocaleDateString('es-PE')}`, 100, yPosition);
-            yPosition += 40;
-
-            // Equipos asignados
-            doc.text('EQUIPOS ASIGNADOS:', 100, yPosition);
-            yPosition += 30;
-
-            if (equipos.length === 0) {
-                doc.text('No tiene equipos asignados', 120, yPosition);
-                yPosition += 20;
-            } else {
-                equipos.forEach((equipo, index) => {
-                    if (yPosition > 700) {
-                        doc.addPage();
-                        yPosition = 100;
-                    }
-                    
-                    doc.text(`${index + 1}. ${equipo.tipo} ${equipo.marca} ${equipo.modelo}`, 120, yPosition);
-                    yPosition += 15;
-                    doc.text(`   Código: ${equipo.codigoPatrimonial} - Estado: ${equipo.estado} - Situación: ${equipo.estado_especial}`, 120, yPosition);
-                    yPosition += 20;
-                    
-                    // Mostrar historial si existe
-                    if (equipo.historial_duenos) {
-                        const historial = equipo.historial_duenos.split('|').filter((item: string) => item.trim());
-                        if (historial.length > 0) {
-                            doc.text(`   Historial:`, 120, yPosition);
-                            yPosition += 15;
-                            historial.forEach((item: string, histIndex: number) => {
-                                if (yPosition > 700) {
-                                    doc.addPage();
-                                    yPosition = 100;
-                                }
-                                doc.text(`     ${histIndex + 1}. ${item.trim()}`, 140, yPosition);
-                                yPosition += 15;
-                            });
-                        }
-                    }
-                    yPosition += 10;
-                });
-            }
-
-            // Impresoras asignadas
-            yPosition += 20;
-            doc.text('IMPRESORAS ASIGNADAS:', 100, yPosition);
-            yPosition += 30;
-
-            if (impresoras.length === 0) {
-                doc.text('No tiene impresoras asignadas', 120, yPosition);
-            } else {
-                impresoras.forEach((impresora, index) => {
-                    if (yPosition > 700) {
-                        doc.addPage();
-                        yPosition = 100;
-                    }
-                    
-                    doc.text(`${index + 1}. ${impresora.modelo}`, 120, yPosition);
-                    yPosition += 15;
-                    doc.text(`   Código: ${impresora.codigoPatrimonial} - Estado: ${impresora.estado} - Situación: ${impresora.estado_especial}`, 120, yPosition);
-                    yPosition += 20;
-                    
-                    // Mostrar historial si existe
-                    if (impresora.historial_duenos) {
-                        const historial = impresora.historial_duenos.split('|').filter((item: string) => item.trim());
-                        if (historial.length > 0) {
-                            doc.text(`   Historial:`, 120, yPosition);
-                            yPosition += 15;
-                            historial.forEach((item: string, histIndex: number) => {
-                                if (yPosition > 700) {
-                                    doc.addPage();
-                                    yPosition = 100;
-                                }
-                                doc.text(`     ${histIndex + 1}. ${item.trim()}`, 140, yPosition);
-                                yPosition += 15;
-                            });
-                        }
-                    }
-                    yPosition += 10;
-                });
-            }
-
-            doc.end();
-        } catch (err) {
-            console.error('Error al generar reporte de usuario:', err);
-            res.status(500).json({ error: 'Error al generar reporte de usuario' });
+          yPosition += 30;
         }
+
+        // 4. HISTÓRICO DE EQUIPOS
+        if (historicoEquipos.length > 0) {
+          if (yPosition > 600) {
+            doc.addPage();
+            yPosition = 50;
+          }
+
+          doc
+            .fillColor("#1f2937")
+            .fontSize(16)
+            .font("Helvetica-Bold")
+            .text("HISTÓRICO DE EQUIPOS", 50, yPosition);
+          yPosition += 25;
+
+          doc
+            .fillColor("#6b7280")
+            .fontSize(10)
+            .font("Helvetica")
+            .text(
+              "Equipos que el usuario tuvo asignados anteriormente:",
+              50,
+              yPosition
+            );
+          yPosition += 20;
+
+          ReporteController.agregarTablaHistoricoEquipos(
+            doc,
+            historicoEquipos,
+            yPosition
+          );
+          yPosition += historicoEquipos.length * 25 + 40;
+        }
+
+        // 5. HISTÓRICO DE IMPRESORAS
+        if (historicoImpresoras.length > 0) {
+          if (yPosition > 600) {
+            doc.addPage();
+            yPosition = 50;
+          }
+
+          doc
+            .fillColor("#1f2937")
+            .fontSize(16)
+            .font("Helvetica-Bold")
+            .text("HISTÓRICO DE IMPRESORAS", 50, yPosition);
+          yPosition += 25;
+
+          doc
+            .fillColor("#6b7280")
+            .fontSize(10)
+            .font("Helvetica")
+            .text(
+              "Impresoras que el usuario tuvo asignadas anteriormente:",
+              50,
+              yPosition
+            );
+          yPosition += 20;
+
+          ReporteController.agregarTablaHistoricoImpresoras(
+            doc,
+            historicoImpresoras,
+            yPosition
+          );
+        }
+
+        // Footer en todas las páginas
+        const totalPages = doc.bufferedPageRange().count;
+        for (let i = 0; i < totalPages; i++) {
+          doc.switchToPage(i);
+          doc
+            .fillColor("#6b7280")
+            .fontSize(10)
+            .text(`Página ${i + 1} de ${totalPages}`, 50, 800, {
+              align: "center",
+              width: 500,
+            });
+        }
+
+        console.log("PDF generado exitosamente");
+        doc.end();
+      } catch (pdfError: any) {
+        console.error("Error al generar PDF:", pdfError);
+        if (!res.headersSent) {
+          res.status(500).json({
+            error: "Error al generar el PDF",
+            details: pdfError?.message || "Error desconocido en PDF",
+          });
+        }
+        return;
+      }
+    } catch (err: any) {
+      console.error("Error completo al generar reporte de usuario:", err);
+
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: "Error al generar reporte de usuario",
+          details: err?.message || "Error desconocido",
+        });
+      }
     }
+  }
+
+  // Métodos auxiliares para tablas
+
+  private static agregarTablaUsuario(
+    doc: PDFKit.PDFDocument,
+    usuario: any,
+    yPosition: number
+  ): void {
+    const rows = [
+      ["Nombres:", usuario.nombres],
+      ["Apellidos:", usuario.apellidos],
+      ["DNI:", usuario.dni],
+      ["Oficina:", usuario.oficina],
+      ["Tipo de Contrato:", usuario.tipoContrato],
+      [
+        "Fecha de Registro:",
+        new Date(usuario.createdAt).toLocaleDateString("es-PE"),
+      ],
+    ];
+
+    ReporteController.agregarTablaDatos(doc, rows, yPosition);
+  }
+
+  private static agregarTablaEquiposActuales(
+    doc: PDFKit.PDFDocument,
+    equipos: any[],
+    startY: number
+  ): void {
+    let y = startY;
+
+    // Header
+    doc
+      .fillColor("#1f2937")
+      .fontSize(9)
+      .font("Helvetica-Bold")
+      .text("COD. PAT.", 50, y);
+    doc.text("EQUIPO", 120, y);
+    doc.text("FECHA ASIGNACIÓN", 250, y);
+    doc.text("ESTADO", 400, y);
+
+    y += 12;
+
+    // Línea separadora
+    doc
+      .moveTo(50, y)
+      .lineTo(550, y)
+      .strokeColor("#e5e7eb")
+      .lineWidth(0.5)
+      .stroke();
+
+    y += 8;
+
+    // Filas
+    equipos.forEach((equipo) => {
+      if (y > 750) {
+        doc.addPage();
+        y = 50;
+      }
+
+      doc
+        .fillColor("#374151")
+        .fontSize(8)
+        .font("Helvetica")
+        .text(equipo.codigoPatrimonial || "Sin código", 50, y, { width: 65 });
+
+      doc.text(`${equipo.tipo} ${equipo.marca} ${equipo.modelo}`, 120, y, {
+        width: 120,
+      });
+
+      const fechaAsignacion = equipo.fecha_asignacion
+        ? new Date(equipo.fecha_asignacion).toLocaleDateString("es-PE")
+        : "Fecha no registrada";
+      doc.text(fechaAsignacion, 250, y, { width: 100 });
+
+      const estadoColor = ReporteController.getColorPorEstado(equipo.estado);
+      doc
+        .fillColor(estadoColor)
+        .text(equipo.estado || "Activo", 400, y, { width: 80 });
+
+      y += 20;
+    });
+  }
+
+  private static agregarTablaImpresorasActuales(
+    doc: PDFKit.PDFDocument,
+    impresoras: any[],
+    startY: number
+  ): void {
+    let y = startY;
+
+    // Header
+    doc
+      .fillColor("#1f2937")
+      .fontSize(9)
+      .font("Helvetica-Bold")
+      .text("COD. PAT.", 50, y);
+    doc.text("MODELO", 120, y);
+    doc.text("FECHA ASIGNACIÓN", 250, y);
+    doc.text("ESTADO", 400, y);
+
+    y += 12;
+
+    // Línea separadora
+    doc
+      .moveTo(50, y)
+      .lineTo(550, y)
+      .strokeColor("#e5e7eb")
+      .lineWidth(0.5)
+      .stroke();
+
+    y += 8;
+
+    // Filas
+    impresoras.forEach((impresora) => {
+      if (y > 750) {
+        doc.addPage();
+        y = 50;
+      }
+
+      doc
+        .fillColor("#374151")
+        .fontSize(8)
+        .font("Helvetica")
+        .text(impresora.codigoPatrimonial || "Sin código", 50, y, {
+          width: 65,
+        });
+
+      doc.text(impresora.modelo, 120, y, { width: 120 });
+
+      const fechaAsignacion = impresora.fecha_asignacion
+        ? new Date(impresora.fecha_asignacion).toLocaleDateString("es-PE")
+        : "Fecha no registrada";
+      doc.text(fechaAsignacion, 250, y, { width: 100 });
+
+      const estadoColor = ReporteController.getColorPorEstado(impresora.estado);
+      doc
+        .fillColor(estadoColor)
+        .text(impresora.estado || "Activo", 400, y, { width: 80 });
+
+      y += 20;
+    });
+  }
+
+  private static agregarTablaHistoricoEquipos(
+    doc: PDFKit.PDFDocument,
+    equipos: any[],
+    startY: number
+  ): void {
+    let y = startY;
+
+    // Header
+    doc
+      .fillColor("#1f2937")
+      .fontSize(8)
+      .font("Helvetica-Bold")
+      .text("CÓDIGO", 50, y);
+    doc.text("EQUIPO", 90, y);
+    doc.text("FECHA ASIGNACIÓN", 200, y);
+    doc.text("FECHA DESASIGNACIÓN", 320, y);
+    doc.text("SITUACIÓN ACTUAL", 450, y);
+
+    y += 10;
+
+    // Línea separadora
+    doc
+      .moveTo(50, y)
+      .lineTo(550, y)
+      .strokeColor("#e5e7eb")
+      .lineWidth(0.5)
+      .stroke();
+
+    y += 8;
+
+    // Filas
+    equipos.forEach((equipo) => {
+      if (y > 750) {
+        doc.addPage();
+        y = 50;
+      }
+
+      doc
+        .fillColor("#374151")
+        .fontSize(7)
+        .font("Helvetica")
+        .text(equipo.codigoPatrimonial || "Sin código", 50, y, { width: 35 });
+
+      doc.text(`${equipo.tipo} ${equipo.marca} ${equipo.modelo}`, 90, y, {
+        width: 100,
+      });
+
+      const fechaAsignacion = equipo.fecha_asignacion
+        ? new Date(equipo.fecha_asignacion).toLocaleDateString("es-PE")
+        : "No registrada";
+      doc.text(fechaAsignacion, 200, y, { width: 90 });
+
+      const fechaDesasignacion = equipo.fecha_desasignacion
+        ? new Date(equipo.fecha_desasignacion).toLocaleDateString("es-PE")
+        : "No registrada";
+      doc.text(fechaDesasignacion, 320, y, { width: 90 });
+
+      const situacionColor = ReporteController.getColorPorSituacion(
+        equipo.estado_especial
+      );
+      doc
+        .fillColor(situacionColor)
+        .text(equipo.estado_especial || "Disponible", 450, y, { width: 70 });
+
+      y += 25;
+    });
+  }
+
+  private static agregarTablaHistoricoImpresoras(
+    doc: PDFKit.PDFDocument,
+    impresoras: any[],
+    startY: number
+  ): void {
+    let y = startY;
+
+    // Header
+    doc
+      .fillColor("#1f2937")
+      .fontSize(8)
+      .font("Helvetica-Bold")
+      .text("CÓDIGO", 50, y);
+    doc.text("MODELO", 90, y);
+    doc.text("FECHA ASIGNACIÓN", 200, y);
+    doc.text("FECHA DESASIGNACIÓN", 320, y);
+    doc.text("SITUACIÓN ACTUAL", 450, y);
+
+    y += 10;
+
+    // Línea separadora
+    doc
+      .moveTo(50, y)
+      .lineTo(550, y)
+      .strokeColor("#e5e7eb")
+      .lineWidth(0.5)
+      .stroke();
+
+    y += 8;
+
+    // Filas
+    impresoras.forEach((impresora) => {
+      if (y > 750) {
+        doc.addPage();
+        y = 50;
+      }
+
+      doc
+        .fillColor("#374151")
+        .fontSize(7)
+        .font("Helvetica")
+        .text(impresora.codigoPatrimonial || "Sin código", 50, y, {
+          width: 35,
+        });
+
+      doc.text(impresora.modelo, 90, y, { width: 100 });
+
+      const fechaAsignacion = impresora.fecha_asignacion
+        ? new Date(impresora.fecha_asignacion).toLocaleDateString("es-PE")
+        : "No registrada";
+      doc.text(fechaAsignacion, 200, y, { width: 90 });
+
+      const fechaDesasignacion = impresora.fecha_desasignacion
+        ? new Date(impresora.fecha_desasignacion).toLocaleDateString("es-PE")
+        : "No registrada";
+      doc.text(fechaDesasignacion, 320, y, { width: 90 });
+
+      const situacionColor = ReporteController.getColorPorSituacion(
+        impresora.estado_especial
+      );
+      doc
+        .fillColor(situacionColor)
+        .text(impresora.estado_especial || "Disponible", 450, y, { width: 70 });
+
+      y += 25;
+    });
+  }
+
+  private static agregarTablaDatos(
+    doc: PDFKit.PDFDocument,
+    rows: string[][],
+    startY: number
+  ): void {
+    let y = startY;
+
+    rows.forEach(([label, value]) => {
+      doc
+        .fillColor("#374151")
+        .fontSize(10)
+        .font("Helvetica-Bold")
+        .text(label, 50, y);
+
+      doc
+        .fillColor("#6b7280")
+        .fontSize(10)
+        .font("Helvetica")
+        .text(value || "N/A", 150, y);
+
+      y += 15;
+    });
+  }
+
+  private static getColorPorSituacion(situacion: string): string {
+    const colores: { [key: string]: string } = {
+      asignado: "#059669", // verde
+      disponible: "#2563eb", // azul
+      revision: "#d97706", // amarillo/naranja
+      baja: "#dc2626", // rojo
+    };
+    return colores[situacion?.toLowerCase()] || "#374151"; // gris por defecto
+  }
+
+  private static getColorPorEstado(estado: string): string {
+    const colores: { [key: string]: string } = {
+      bueno: "#059669", // verde
+      regular: "#d97706", // amarillo/naranja
+      malo: "#dc2626", // rojo
+      activo: "#059669", // verde
+      inactivo: "#6b7280", // gris
+      mantenimiento: "#d97706", // amarillo/naranja
+    };
+    return colores[estado?.toLowerCase()] || "#374151"; // gris por defecto
+  }
 }
