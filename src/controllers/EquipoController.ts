@@ -206,7 +206,7 @@ class EquipoController {
         }
     }
 
-  static async actualizarEquipo(req: Request, res: Response): Promise<Response> {
+static async actualizarEquipo(req: Request, res: Response): Promise<Response> {
     const { id } = req.params;
     const {
         tipo, marca, modelo, procesador, ram, almacenamiento, oficina,
@@ -238,14 +238,17 @@ class EquipoController {
 
         const equipoPrev = equipoAnterior[0];
 
-        // 2. Actualizar equipo
+        // DETERMINAR estado_especial BASADO EN usuarioId (FALTABA ESTO)
+        const estadoEspecial = usuarioId ? 'asignado' : 'disponible';
+
+        // 2. Actualizar equipo (AGREGAR estado_especial)
         const query = `
             UPDATE equipos SET 
                 tipo = ?, marca = ?, modelo = ?, procesador = ?, ram = ?, almacenamiento = ?, 
                 oficina = ?, ip = ?, mac = ?, codigoPatrimonial = ?, 
                 so = ?, officeVersion = ?, antivirus = ?, estado = ?,
                 marcaMonitor = ?, pulgadasMonitor = ?, codigoPatrimonialMonitor = ?, estadoMonitor = ?,
-                tieneTeclado = ?, tieneMouse = ?, usuarioId = ?
+                tieneTeclado = ?, tieneMouse = ?, usuarioId = ?, estado_especial = ?
             WHERE id = ?
         `;
 
@@ -253,7 +256,7 @@ class EquipoController {
             tipo, marca, modelo, procesador, ram, almacenamiento, oficina, ip, mac, 
             codigoPatrimonial, so, officeVersion, antivirus, estado,
             marcaMonitor, pulgadasMonitor, codigoPatrimonialMonitor || null, estadoMonitor,
-            tieneTeclado ? 1 : 0, tieneMouse ? 1 : 0, usuarioId || null, id
+            tieneTeclado ? 1 : 0, tieneMouse ? 1 : 0, usuarioId || null, estadoEspecial, id
         ]);
 
         if (result.affectedRows === 0) {
@@ -264,7 +267,8 @@ class EquipoController {
         // 3. Registrar en historial si hay cambios importantes
         const cambios: string[] = [];
 
-        if (equipoPrev.usuarioId !== usuarioId) {
+        // Verificar cambios en asignación/desasignación (CORREGIR ESTA LÓGICA)
+        if (equipoPrev.usuarioId !== (usuarioId || null)) {
             if (usuarioId) {
                 cambios.push('asignacion');
             } else {
@@ -284,7 +288,7 @@ class EquipoController {
             cambios.push('cambio_estado');
         }
 
-        // Registrar cada cambio en el historial
+        // Registrar cada cambio en el historial (AGREGAR estado_especial)
         for (const accion of cambios) {
             const detalles = {
                 prev: {
@@ -292,14 +296,16 @@ class EquipoController {
                     oficina: equipoPrev.oficina,
                     ip: equipoPrev.ip,
                     mac: equipoPrev.mac,
-                    estado: equipoPrev.estado
+                    estado: equipoPrev.estado,
+                    estado_especial: equipoPrev.estado_especial
                 },
                 next: {
                     usuarioId: usuarioId || null,
                     oficina: oficina,
                     ip: ip,
                     mac: mac,
-                    estado: estado
+                    estado: estado,
+                    estado_especial: estadoEspecial
                 },
                 nota: `Actualización desde panel - ${accion}`
             };
