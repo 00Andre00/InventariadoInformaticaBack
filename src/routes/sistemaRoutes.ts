@@ -14,15 +14,13 @@ router.use(authenticateToken);
 router.post('/usuarios-sistema', requireAdmin, asyncHandler(UsuarioSistemaController.crearUsuarioSistema));
 router.get('/usuarios-sistema', requireAdmin, asyncHandler(UsuarioSistemaController.obtenerUsuariosSistema));
 router.delete('/usuarios-sistema/:id', requireAdmin, asyncHandler(UsuarioSistemaController.eliminarUsuarioSistema));
-
-// 🔽 AÑADE ESTA RUTA - es la que está dando 404
 router.put('/usuarios-sistema/:id/password', requireAdmin, asyncHandler(UsuarioSistemaController.cambiarPasswordUsuario));
 
 // Rutas para equipos en revisión (admin e informática)
 router.post('/equipos/:id/revision', requireInformatica, asyncHandler(RevisionController.enviarARevision));
 router.get('/equipos-revision', requireInformatica, asyncHandler(RevisionController.obtenerEquiposRevision));
 router.put('/equipos/:id/reparar', requireInformatica, asyncHandler(RevisionController.repararEquipo));
-router.put('/equipos/:id/baja', requireInformatica, asyncHandler(RevisionController.darDeBaja));
+router.put('/equipos/:id/baja', requireInformatica, asyncHandler(RevisionController.darDeBajaEquipo));
 
 // Rutas para impresoras en revisión (admin e informática)
 router.post('/impresoras/:id/revision', requireInformatica, asyncHandler(RevisionController.enviarImpresoraARevision));
@@ -35,16 +33,15 @@ router.get('/equipos-disponibles', requireInformatica, asyncHandler(RevisionCont
 router.get('/impresoras-disponibles', requireInformatica, asyncHandler(RevisionController.obtenerImpresorasDisponibles));
 
 // Rutas para reportes (todos los usuarios autenticados)
-router.get('/reportes/cambio/:tipo/:id', asyncHandler(ReporteController.generarReporteCambio));
 router.get('/reportes/usuario/:id', asyncHandler(ReporteController.generarReporteUsuario));
 
 // Cambiar contraseña (usuario autenticado)
 router.put('/cambiar-password', authenticateToken, asyncHandler(UsuarioSistemaController.cambiarPassword));
 
-//Devolver equipos a informatica
-router.put('/equipos/:id/revision', requireAdmin, asyncHandler(RevisionController.enviarARevision));
+// Devolver equipos a informatica
+router.put('/equipos/:id/devolver-informatica', requireAdmin, asyncHandler(RevisionController.enviarARevision));
 
-// Agrega estas rutas al final de sistemaRoutes.ts
+// Otras rutas
 router.get('/fecha-baja/:tipo/:id', authenticateToken, asyncHandler(RevisionController.obtenerFechaBaja));
 router.get('/historial/:tipo/:id', authenticateToken, asyncHandler(RevisionController.obtenerHistorialCompleto));
 
