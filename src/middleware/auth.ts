@@ -42,7 +42,12 @@ export const authenticateToken = async (
             return;
         }
 
-        req.user = userArray[0];
+        req.user = {
+            id: userArray[0].id,
+            username: userArray[0].username,
+            nombre: userArray[0].nombre,
+            rol: userArray[0].rol
+        };
         next();
     } catch (error) {
         res.status(403).json({ error: 'Token inválido' });
