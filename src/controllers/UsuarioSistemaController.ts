@@ -20,9 +20,9 @@ export class UsuarioSistemaController {
             return res.status(400).json({ message: 'Todos los campos son requeridos' });
         }
 
-        // Validar que el rol sea válido
-        if (!['informatica', 'patrimonio'].includes(rol)) {
-            return res.status(400).json({ message: 'Rol no válido. Solo se permiten: informatica, patrimonio' });
+        // Validar que el rol sea válido - SOLO INFORMATICA
+        if (rol !== 'informatica') {
+            return res.status(400).json({ message: 'Rol no válido. Solo se permite: informatica' });
         }
 
         try {
@@ -133,66 +133,63 @@ export class UsuarioSistemaController {
         }
     }
 
-   // Método para que admin cambie contraseña de otros usuarios
-static async cambiarPasswordUsuario(req: Request, res: Response): Promise<Response> {
-    const { id } = req.params;
-    const { nuevaPassword } = req.body;
-    const usuarioSistemaId = (req as any).user.id;
+    // Método para que admin cambie contraseña de otros usuarios
+    static async cambiarPasswordUsuario(req: Request, res: Response): Promise<Response> {
+        const { id } = req.params;
+        const { nuevaPassword } = req.body;
+        const usuarioSistemaId = (req as any).user.id;
 
-    if (!nuevaPassword) {
-        return res.status(400).json({ error: 'Nueva contraseña es requerida' });
-    }
-
-    if (isNaN(Number(id))) {
-        return res.status(400).json({ message: 'ID inválido' });
-    }
-
-    try {
-        // Verificar que el usuario que hace la petición es admin
-        const [usuarioActual] = await db.promise().query<RowDataPacket[]>(
-            'SELECT rol FROM usuarios_sistema WHERE id = ?',
-            [usuarioSistemaId]
-        );
-
-        if (usuarioActual.length === 0 || usuarioActual[0].rol !== 'admin') {
-            return res.status(403).json({ error: 'Solo los administradores pueden cambiar contraseñas de otros usuarios' });
+        if (!nuevaPassword) {
+            return res.status(400).json({ error: 'Nueva contraseña es requerida' });
         }
 
-        // Verificar que el usuario objetivo existe
-        const [usuarioObjetivo] = await db.promise().query<RowDataPacket[]>(
-            'SELECT id, username FROM usuarios_sistema WHERE id = ?',
-            [id]
-        );
-
-        if (usuarioObjetivo.length === 0) {
-            return res.status(404).json({ error: 'Usuario no encontrado' });
+        if (isNaN(Number(id))) {
+            return res.status(400).json({ message: 'ID inválido' });
         }
 
-        // Validar longitud de contraseña
-        if (nuevaPassword.length < 6) {
-            return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+        try {
+            // Verificar que el usuario que hace la petición es admin
+            const [usuarioActual] = await db.promise().query<RowDataPacket[]>(
+                'SELECT rol FROM usuarios_sistema WHERE id = ?',
+                [usuarioSistemaId]
+            );
+
+            if (usuarioActual.length === 0 || usuarioActual[0].rol !== 'admin') {
+                return res.status(403).json({ error: 'Solo los administradores pueden cambiar contraseñas de otros usuarios' });
+            }
+
+            // Verificar que el usuario objetivo existe
+            const [usuarioObjetivo] = await db.promise().query<RowDataPacket[]>(
+                'SELECT id, username FROM usuarios_sistema WHERE id = ?',
+                [id]
+            );
+
+            if (usuarioObjetivo.length === 0) {
+                return res.status(404).json({ error: 'Usuario no encontrado' });
+            }
+
+            // Validar longitud de contraseña
+            if (nuevaPassword.length < 6) {
+                return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+            }
+
+            // Hashear nueva contraseña
+            const nuevaPasswordHash = await bcrypt.hash(nuevaPassword, 10);
+
+            // Actualizar contraseña
+            await db.promise().query(
+                'UPDATE usuarios_sistema SET password_hash = ? WHERE id = ?',
+                [nuevaPasswordHash, id]
+            );
+
+            return res.status(200).json({ 
+                message: 'Contraseña cambiada correctamente',
+                usuario: usuarioObjetivo[0].username
+            });
+
+        } catch (err) {
+            console.error('Error al cambiar contraseña de usuario:', err);
+            return res.status(500).json({ error: 'Error al cambiar contraseña' });
         }
-
-        // Hashear nueva contraseña
-        const nuevaPasswordHash = await bcrypt.hash(nuevaPassword, 10);
-
-        // Actualizar contraseña
-        await db.promise().query(
-            'UPDATE usuarios_sistema SET password_hash = ? WHERE id = ?',
-            [nuevaPasswordHash, id]
-        );
-
-        // 🔽 ELIMINADO - No registrar en historial para usuarios del sistema
-        // El historial_cambios solo está diseñado para equipos/impresoras
-
-        return res.status(200).json({ 
-            message: 'Contraseña cambiada correctamente',
-            usuario: usuarioObjetivo[0].username
-        });
-
-    } catch (err) {
-        console.error('Error al cambiar contraseña de usuario:', err);
-        return res.status(500).json({ error: 'Error al cambiar contraseña' });
     }
-}
 }

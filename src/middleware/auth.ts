@@ -79,16 +79,3 @@ export const requireInformatica = (
     }
     next();
 };
-
-// Middleware para verificar rol de patrimonio
-export const requirePatrimonio = (
-    req: AuthenticatedRequest, 
-    res: Response, 
-    next: NextFunction
-): void => {
-    if (req.user?.rol !== 'patrimonio') {
-        res.status(403).json({ error: 'Se requieren permisos de patrimonio' });
-        return;
-    }
-    next();
-};
