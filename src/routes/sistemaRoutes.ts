@@ -35,6 +35,13 @@ router.get('/impresoras-disponibles', requireInformatica, asyncHandler(RevisionC
 // Rutas para reportes (todos los usuarios autenticados)
 router.get('/reportes/usuario/:id', asyncHandler(ReporteController.generarReporteUsuario));
 
+// Reporte equipos
+router.get('/reportes/equipo/:id', ReporteController.generarReporteEquipo);
+
+// En tu archivo de rutas (routes/reportes.ts o similar)
+router.get('/reportes/cambio/impresora/:id', ReporteController.generarReporteImpresora);
+
+
 // Cambiar contraseña (usuario autenticado)
 router.put('/cambiar-password', authenticateToken, asyncHandler(UsuarioSistemaController.cambiarPassword));
 

@@ -1171,20 +1171,36 @@ export class ReporteController {
                     detalles.prev?.estado_especial ||
                     situacion;
 
-                  // El resto del código se mantiene igual...
-                  if (
-                    detalles.next?.usuarioId &&
-                    detalles.prev?.usuarioId !== detalles.next?.usuarioId
-                  ) {
-                    const usuarioId = detalles.next.usuarioId;
-                    const usuarioInfo = usuariosInfo.find(
-                      (u) => u.usuarioId === usuarioId
-                    );
-                    usuarioEstado = usuarioInfo
-                      ? `${usuarioInfo.nombres} ${usuarioInfo.apellidos}`
-                      : `Usuario ${usuarioId}`;
-                  }
-                  // ... resto del código igual
+           // Usuario/Estado - VERSIÓN MEJORADA (igual que impresoras)
+if (detalles.next?.estado_especial === "revision") {
+  usuarioEstado = "REVISIÓN";
+} else if (detalles.next?.estado_especial === "baja") {
+  usuarioEstado = "BAJA";
+} else if (detalles.next?.estado_especial === "disponible") {
+  usuarioEstado = "DISPONIBLE";
+} else if (
+  detalles.next?.usuarioId &&
+  detalles.prev?.usuarioId !== detalles.next?.usuarioId
+) {
+  const usuarioId = detalles.next.usuarioId;
+  const usuarioInfo = usuariosInfo.find(
+    (u) => u.usuarioId === usuarioId
+  );
+  usuarioEstado = usuarioInfo
+    ? `${usuarioInfo.nombres} ${usuarioInfo.apellidos}`
+    : `Usuario ${usuarioId}`;
+} else if (
+  !detalles.next?.usuarioId &&
+  detalles.prev?.usuarioId
+) {
+  usuarioEstado = "SIN USUARIO";
+} else if (detalles.next?.estado_especial) {
+  usuarioEstado = detalles.next.estado_especial.toUpperCase();
+} else if (detalles.prev?.estado_especial) {
+  usuarioEstado = detalles.prev.estado_especial.toUpperCase();
+} else {
+  usuarioEstado = situacion.toUpperCase(); // ← Esto mostrará "DISPONIBLE", "REVISIÓN", etc.
+}
                 } catch (parseError) {
                   console.error(
                     "Error parseando detalles de impresora:",
@@ -1476,7 +1492,7 @@ export class ReporteController {
           ["MAC:", impresoraData.mac || "N/A"],
           ["Oficina:", impresoraData.oficina || "N/A"],
           ["Estado Técnico:", impresoraData.estado || "N/A"],
-          ["Estado Especial:", impresoraData.estado_especial || "N/A"],
+          // ["Estado Especial:", impresoraData.estado_especial || "N/A"],
           [
             "Usuario Actual:",
             impresoraData.usuario_id

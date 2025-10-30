@@ -38,91 +38,101 @@ interface Usuario extends RowDataPacket {
 }
 
 class EquipoController {
-    // Crear un equipo
-    static async crearEquipo(req: Request, res: Response): Promise<Response> {
-        const {
-            tipo,
-            marca,
-            modelo,
-            procesador,
-            ram,
-            almacenamiento,
-            oficina,
-            ip,
-            mac,
-            codigoPatrimonial,
-            so,
-            officeVersion,
-            antivirus,
-            estado,
-            marcaMonitor,
-            pulgadasMonitor,
-            codigoPatrimonialMonitor,
-            estadoMonitor,
-            tieneTeclado,
-            tieneMouse,
-            usuarioId
-        } = req.body;
+// Crear un equipo
+static async crearEquipo(req: Request, res: Response): Promise<Response> {
+    const {
+        tipo,
+        marca,
+        modelo,
+        procesador,
+        ram,
+        almacenamiento,
+        oficina,
+        ip,
+        mac,
+        codigoPatrimonial,
+        so,
+        officeVersion,
+        antivirus,
+        estado,
+        marcaMonitor,
+        pulgadasMonitor,
+        codigoPatrimonialMonitor,
+        estadoMonitor,
+        tieneTeclado,
+        tieneMouse,
+        usuarioId
+    } = req.body;
 
-        if (!tipo || !marca || !modelo || !procesador || !ram || !almacenamiento || 
-            !oficina || !ip || !mac || !estado || !marcaMonitor || !pulgadasMonitor || !estadoMonitor) {
-            return res.status(400).json({ message: 'Faltan campos requeridos.' });
-        }
+    if (!tipo || !marca || !modelo || !procesador || !ram || !almacenamiento || 
+        !oficina || !ip || !mac || !estado || !marcaMonitor || !pulgadasMonitor || !estadoMonitor) {
+        return res.status(400).json({ message: 'Faltan campos requeridos.' });
+    }
 
-        const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-        if (!ipRegex.test(ip)) {
-            return res.status(400).json({ message: 'Formato de IP inválido.' });
-        }
+    const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+    if (!ipRegex.test(ip)) {
+        return res.status(400).json({ message: 'Formato de IP inválido.' });
+    }
 
-        const macRegex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
-        if (!macRegex.test(mac)) {
-            return res.status(400).json({ message: 'Formato de MAC inválido.' });
-        }
+    const macRegex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
+    if (!macRegex.test(mac)) {
+        return res.status(400).json({ message: 'Formato de MAC inválido.' });
+    }
 
-        // Verificar si el usuario existe si se proporciona usuarioId
-        if (usuarioId) {
-            try {
-                const [usuario] = await db.promise().query<Usuario[]>(
-                    'SELECT id FROM usuarios WHERE id = ?', 
-                    [usuarioId]
-                );
-                if (usuario.length === 0) {
-                    return res.status(400).json({ message: 'El usuario especificado no existe' });
-                }
-            } catch (err) {
-                console.error('Error al verificar usuario:', err);
-                return res.status(500).json({ error: 'Error al verificar usuario' });
-            }
-        }
-
-        const query = `
-            INSERT INTO equipos 
-            (tipo, marca, modelo, procesador, ram, almacenamiento, oficina, ip, mac, 
-             codigoPatrimonial, so, officeVersion, antivirus, estado,
-             marcaMonitor, pulgadasMonitor, codigoPatrimonialMonitor, estadoMonitor,
-             tieneTeclado, tieneMouse, usuarioId) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `;
-
+    // Verificar si el usuario existe si se proporciona usuarioId
+    if (usuarioId) {
         try {
-            const [result] = await db.promise().query<ResultSetHeader>(query, [
-                tipo, marca, modelo, procesador, ram, almacenamiento, oficina, ip, mac, 
-                codigoPatrimonial, so, officeVersion, antivirus, estado,
-                marcaMonitor, pulgadasMonitor, codigoPatrimonialMonitor || null, estadoMonitor,
-                tieneTeclado ? 1 : 0, tieneMouse ? 1 : 0, usuarioId || null
-            ]);
-            return res.status(201).json({
-                message: 'Equipo creado correctamente',
-                id: result.insertId
-            });
-        } catch (err: any) {
-            console.error('Error al agregar el equipo:', err);
-            if (err.code === 'ER_DUP_ENTRY') {
-                return res.status(409).json({ error: 'Ya existe un equipo con esa IP o MAC' });
+            const [usuario] = await db.promise().query<Usuario[]>(
+                'SELECT id FROM usuarios WHERE id = ?', 
+                [usuarioId]
+            );
+            if (usuario.length === 0) {
+                return res.status(400).json({ message: 'El usuario especificado no existe' });
             }
-            return res.status(500).json({ error: 'Error al crear el equipo' });
+        } catch (err) {
+            console.error('Error al verificar usuario:', err);
+            return res.status(500).json({ error: 'Error al verificar usuario' });
         }
     }
+
+    // LÓGICA CORREGIDA para estado_especial
+    let estadoEspecial = 'disponible';
+    if (usuarioId) {
+        estadoEspecial = 'asignado';
+    }
+    if (estado && estado.toLowerCase() === 'revision') {
+        estadoEspecial = 'revision';
+    }
+
+    const query = `
+        INSERT INTO equipos 
+        (tipo, marca, modelo, procesador, ram, almacenamiento, oficina, ip, mac, 
+         codigoPatrimonial, so, officeVersion, antivirus, estado, estado_especial,
+         marcaMonitor, pulgadasMonitor, codigoPatrimonialMonitor, estadoMonitor,
+         tieneTeclado, tieneMouse, usuarioId) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+
+    try {
+        const [result] = await db.promise().query<ResultSetHeader>(query, [
+            tipo, marca, modelo, procesador, ram, almacenamiento, oficina, ip, mac, 
+            codigoPatrimonial, so, officeVersion, antivirus, estado, estadoEspecial,
+            marcaMonitor, pulgadasMonitor, codigoPatrimonialMonitor || null, estadoMonitor,
+            tieneTeclado ? 1 : 0, tieneMouse ? 1 : 0, usuarioId || null
+        ]);
+
+        return res.status(201).json({
+            message: 'Equipo creado correctamente',
+            id: result.insertId
+        });
+    } catch (err: any) {
+        console.error('Error al agregar el equipo:', err);
+        if (err.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ error: 'Ya existe un equipo con esa IP o MAC' });
+        }
+        return res.status(500).json({ error: 'Error al crear el equipo' });
+    }
+}
 
     // Obtener todos los equipos con información de usuario
     static async obtenerEquipos(req: Request, res: Response): Promise<Response> {
@@ -219,7 +229,6 @@ static async actualizarEquipo(req: Request, res: Response): Promise<Response> {
         return res.status(400).json({ message: 'ID inválido' });
     }
 
-    const usuarioSistemaId = HistorialHelper.obtenerUsuarioSistemaId(req);
     const conn = await db.promise().getConnection();
 
     try {
@@ -238,25 +247,34 @@ static async actualizarEquipo(req: Request, res: Response): Promise<Response> {
 
         const equipoPrev = equipoAnterior[0];
 
-        // DETERMINAR estado_especial BASADO EN usuarioId (FALTABA ESTO)
-        const estadoEspecial = usuarioId ? 'asignado' : 'disponible';
+        // LÓGICA MEJORADA para determinar estado_especial
+        let estadoEspecial = equipoPrev.estado_especial;
+        
+        // Si el estado técnico es "revisión", forzar estado_especial a "revision"
+        if (estado && estado.toLowerCase() === 'revision') {
+            estadoEspecial = 'revision';
+        } else if (usuarioId) {
+            estadoEspecial = 'asignado';
+        } else if (estadoEspecial !== 'baja') {
+            estadoEspecial = 'disponible';
+        }
 
-        // 2. Actualizar equipo (AGREGAR estado_especial)
+        // 2. Actualizar equipo con la lógica corregida
         const query = `
             UPDATE equipos SET 
                 tipo = ?, marca = ?, modelo = ?, procesador = ?, ram = ?, almacenamiento = ?, 
                 oficina = ?, ip = ?, mac = ?, codigoPatrimonial = ?, 
-                so = ?, officeVersion = ?, antivirus = ?, estado = ?,
+                so = ?, officeVersion = ?, antivirus = ?, estado = ?, estado_especial = ?,
                 marcaMonitor = ?, pulgadasMonitor = ?, codigoPatrimonialMonitor = ?, estadoMonitor = ?,
-                tieneTeclado = ?, tieneMouse = ?, usuarioId = ?, estado_especial = ?
+                tieneTeclado = ?, tieneMouse = ?, usuarioId = ?
             WHERE id = ?
         `;
 
         const [result] = await conn.query<ResultSetHeader>(query, [
             tipo, marca, modelo, procesador, ram, almacenamiento, oficina, ip, mac, 
-            codigoPatrimonial, so, officeVersion, antivirus, estado,
+            codigoPatrimonial, so, officeVersion, antivirus, estado, estadoEspecial,
             marcaMonitor, pulgadasMonitor, codigoPatrimonialMonitor || null, estadoMonitor,
-            tieneTeclado ? 1 : 0, tieneMouse ? 1 : 0, usuarioId || null, estadoEspecial, id
+            tieneTeclado ? 1 : 0, tieneMouse ? 1 : 0, usuarioId || null, id
         ]);
 
         if (result.affectedRows === 0) {
@@ -264,63 +282,7 @@ static async actualizarEquipo(req: Request, res: Response): Promise<Response> {
             return res.status(404).json({ message: 'Equipo no encontrado' });
         }
 
-        // 3. Registrar en historial si hay cambios importantes
-        const cambios: string[] = [];
-
-        // Verificar cambios en asignación/desasignación (CORREGIR ESTA LÓGICA)
-        if (equipoPrev.usuarioId !== (usuarioId || null)) {
-            if (usuarioId) {
-                cambios.push('asignacion');
-            } else {
-                cambios.push('desasignacion');
-            }
-        }
-
-        if (equipoPrev.oficina !== oficina) {
-            cambios.push('traslado');
-        }
-
-        if (equipoPrev.ip !== ip || equipoPrev.mac !== mac) {
-            cambios.push('actualizacion_red');
-        }
-
-        if (equipoPrev.estado !== estado) {
-            cambios.push('cambio_estado');
-        }
-
-        // Registrar cada cambio en el historial (AGREGAR estado_especial)
-        for (const accion of cambios) {
-            const detalles = {
-                prev: {
-                    usuarioId: equipoPrev.usuarioId,
-                    oficina: equipoPrev.oficina,
-                    ip: equipoPrev.ip,
-                    mac: equipoPrev.mac,
-                    estado: equipoPrev.estado,
-                    estado_especial: equipoPrev.estado_especial
-                },
-                next: {
-                    usuarioId: usuarioId || null,
-                    oficina: oficina,
-                    ip: ip,
-                    mac: mac,
-                    estado: estado,
-                    estado_especial: estadoEspecial
-                },
-                nota: `Actualización desde panel - ${accion}`
-            };
-
-            await HistorialHelper.registrarCambio(
-                'equipo',
-                parseInt(id),
-                accion,
-                detalles,
-                usuarioSistemaId
-            );
-        }
-
         await conn.commit();
-
         return res.status(200).json({ message: 'Equipo actualizado correctamente' });
     } catch (err: any) {
         await conn.rollback();
