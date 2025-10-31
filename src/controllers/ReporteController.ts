@@ -57,59 +57,63 @@ export class ReporteController {
         [id]
       );
 
-      // 3. HISTÓRICO DE EQUIPOS (solo las que NO están asignadas actualmente)
-      const [historicoEquipos] = await db.promise().query<RowDataPacket[]>(
-        `SELECT e.*,
-                (SELECT hc.createdAt FROM historial_cambios hc 
-                 WHERE hc.activo_id = e.id AND hc.tipo_activo = 'equipo' 
-                 AND (hc.accion = 'asignacion' OR hc.accion = 'asignado' OR hc.accion LIKE '%asign%')
-                 ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion,
-                (SELECT hc.createdAt FROM historial_cambios hc 
-                 WHERE hc.activo_id = e.id AND hc.tipo_activo = 'equipo' 
-                 AND (hc.accion = 'revision' OR hc.accion = 'baja' OR hc.accion = 'enviado_a_revision' OR hc.accion = 'dado_de_baja' OR hc.accion = 'desasignacion') 
-                 ORDER BY hc.createdAt DESC LIMIT 1) as fecha_desasignacion
-         FROM equipos e 
-         WHERE e.id IN (
-           SELECT DISTINCT activo_id FROM historial_cambios 
-           WHERE tipo_activo = 'equipo' 
-           AND (detalles LIKE ? OR detalles LIKE ? OR accion LIKE '%asign%')
-         )
-         AND (e.usuarioId != ? OR e.usuarioId IS NULL)
-         AND e.estado_especial != 'asignado'
-         ORDER BY fecha_desasignacion DESC, fecha_asignacion DESC`,
-        [
-          `%${usuarioData.nombres}%`,
-          `%${usuarioData.nombres} ${usuarioData.apellidos}%`,
-          id,
-        ]
-      );
+// 3. HISTÓRICO DE EQUIPOS (equipos que el usuario tuvo pero NO tiene actualmente)
+const [historicoEquipos] = await db.promise().query<RowDataPacket[]>(
+  `SELECT e.*,
+          (SELECT hc.createdAt FROM historial_cambios hc 
+           WHERE hc.activo_id = e.id AND hc.tipo_activo = 'equipo' 
+           AND (hc.accion = 'asignacion' OR hc.accion = 'asignado' OR hc.accion LIKE '%asign%' OR hc.accion = 'reasignacion')
+           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion,
+          (SELECT hc.createdAt FROM historial_cambios hc 
+           WHERE hc.activo_id = e.id AND hc.tipo_activo = 'equipo' 
+           AND (hc.accion = 'revision' OR hc.accion = 'baja' OR hc.accion = 'enviado_a_revision' OR hc.accion = 'dado_de_baja' OR hc.accion = 'desasignacion' OR hc.accion = 'reasignacion') 
+           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_desasignacion
+   FROM equipos e 
+   WHERE e.id IN (
+     SELECT DISTINCT activo_id FROM historial_cambios 
+     WHERE tipo_activo = 'equipo' 
+     AND (detalles LIKE ? OR detalles LIKE ? OR detalles LIKE ? OR accion LIKE '%asign%' OR accion = 'reasignacion')
+   )
+   AND e.id NOT IN (
+     SELECT id FROM equipos WHERE usuarioId = ? AND estado_especial = 'asignado'
+   )
+   ORDER BY fecha_desasignacion DESC, fecha_asignacion DESC`,
+  [
+    `%${usuarioData.nombres}%`,
+    `%${usuarioData.apellidos}%`,
+    `%${usuarioData.nombres} ${usuarioData.apellidos}%`,
+    id,
+  ]
+);
 
-      // 4. HISTÓRICO DE IMPRESORAS (solo las que NO están asignadas actualmente)
-      const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
-        `SELECT i.*,
-                (SELECT hc.createdAt FROM historial_cambios hc 
-                 WHERE hc.activo_id = i.id AND hc.tipo_activo = 'impresora' 
-                 AND (hc.accion = 'asignacion' OR hc.accion = 'asignada' OR hc.accion LIKE '%asign%')
-                 ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion,
-                (SELECT hc.createdAt FROM historial_cambios hc 
-                 WHERE hc.activo_id = i.id AND hc.tipo_activo = 'impresora' 
-                 AND (hc.accion = 'revision' OR hc.accion = 'baja' OR hc.accion = 'enviado_a_revision' OR hc.accion = 'dada_de_baja' OR hc.accion = 'desasignacion') 
-                 ORDER BY hc.createdAt DESC LIMIT 1) as fecha_desasignacion
-         FROM impresoras i 
-         WHERE i.id IN (
-           SELECT DISTINCT activo_id FROM historial_cambios 
-           WHERE tipo_activo = 'impresora' 
-           AND (detalles LIKE ? OR detalles LIKE ? OR accion LIKE '%asign%')
-         )
-         AND (i.usuarioId != ? OR i.usuarioId IS NULL)
-         AND i.estado_especial != 'asignado'
-         ORDER BY fecha_desasignacion DESC, fecha_asignacion DESC`,
-        [
-          `%${usuarioData.nombres}%`,
-          `%${usuarioData.nombres} ${usuarioData.apellidos}%`,
-          id,
-        ]
-      );
+// 4. HISTÓRICO DE IMPRESORAS (impresoras que el usuario tuvo pero NO tiene actualmente)
+const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
+  `SELECT i.*,
+          (SELECT hc.createdAt FROM historial_cambios hc 
+           WHERE hc.activo_id = i.id AND hc.tipo_activo = 'impresora' 
+           AND (hc.accion = 'asignacion' OR hc.accion = 'asignada' OR hc.accion LIKE '%asign%' OR hc.accion = 'reasignacion')
+           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion,
+          (SELECT hc.createdAt FROM historial_cambios hc 
+           WHERE hc.activo_id = i.id AND hc.tipo_activo = 'impresora' 
+           AND (hc.accion = 'revision' OR hc.accion = 'baja' OR hc.accion = 'enviado_a_revision' OR hc.accion = 'dada_de_baja' OR hc.accion = 'desasignacion' OR hc.accion = 'reasignacion') 
+           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_desasignacion
+   FROM impresoras i 
+   WHERE i.id IN (
+     SELECT DISTINCT activo_id FROM historial_cambios 
+     WHERE tipo_activo = 'impresora' 
+     AND (detalles LIKE ? OR detalles LIKE ? OR detalles LIKE ? OR accion LIKE '%asign%' OR accion = 'reasignacion')
+   )
+   AND i.id NOT IN (
+     SELECT id FROM impresoras WHERE usuarioId = ? AND estado_especial = 'asignado'
+   )
+   ORDER BY fecha_desasignacion DESC, fecha_asignacion DESC`,
+  [
+    `%${usuarioData.nombres}%`,
+    `%${usuarioData.apellidos}%`,
+    `%${usuarioData.nombres} ${usuarioData.apellidos}%`,
+    id,
+  ]
+);
 
       console.log("=== DEBUG REPORTE ===");
       console.log("Usuario:", usuarioData.nombres, usuarioData.apellidos);
