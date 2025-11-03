@@ -41,6 +41,8 @@ router.get('/reportes/equipo/:id', ReporteController.generarReporteEquipo);
 // En tu archivo de rutas (routes/reportes.ts o similar)
 router.get('/reportes/cambio/impresora/:id', ReporteController.generarReporteImpresora);
 
+// NUEVA RUTA PARA REPORTE GENERAL ✅
+router.get('/reportes/general-equipos', ReporteController.generarReporteGeneralEquipos);
 
 // Cambiar contraseña (usuario autenticado)
 router.put('/cambiar-password', authenticateToken, asyncHandler(UsuarioSistemaController.cambiarPassword));
