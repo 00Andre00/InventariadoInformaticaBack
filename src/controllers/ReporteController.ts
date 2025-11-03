@@ -1267,7 +1267,173 @@ static async generarReporteGeneralUsuarios(
   }
 }
 
+// REPORTE GENERAL DE IMPRESORAS - VERSIÓN CORREGIDA
+static async generarReporteGeneralImpresoras(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    console.log("Generando reporte general de impresoras");
 
+    // Obtener todas las impresoras con información de usuario
+    const [impresoras] = await db.promise().query<RowDataPacket[]>(
+      `SELECT i.*, 
+                u.nombres as usuario_nombres, 
+                u.apellidos as usuario_apellidos,
+                u.dni as usuario_dni,
+                u.oficina as usuario_oficina
+         FROM impresoras i
+         LEFT JOIN usuarios u ON i.usuarioId = u.id
+         ORDER BY i.estado_especial, i.oficina, i.modelo`
+    );
+
+    console.log(`Impresoras encontradas: ${impresoras.length}`);
+
+    // Crear PDF en formato landscape
+    const doc = new PDFDocument({
+      margin: 50,
+      bufferPages: true,
+      size: 'A4',
+      layout: 'landscape'
+    });
+
+    // Configurar headers
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=reporte-general-impresoras-${new Date().toISOString().split('T')[0]}.pdf`
+    );
+
+    doc.pipe(res);
+
+    // Header
+    doc
+      .fillColor("#1f2937")
+      .fontSize(18)
+      .font("Helvetica-Bold")
+      .text("SISTEMA DE INVENTARIO - REPORTE GENERAL DE IMPRESORAS", 50, 50);
+
+    doc
+      .fillColor("#6b7280")
+      .fontSize(10)
+      .font("Helvetica")
+      .text(`Generado: ${new Date().toLocaleString("es-PE")}`, 50, 75)
+      .text(`Total de impresoras: ${impresoras.length}`, 50, 90);
+
+    // Línea separadora
+    doc
+      .moveTo(50, 110)
+      .lineTo(780, 110)
+      .strokeColor("#e5e7eb")
+      .lineWidth(1)
+      .stroke();
+
+    let yPosition = 130;
+
+    // Tabla de impresoras
+    if (impresoras.length > 0) {
+      // Header de la tabla con anchos optimizados - SIN UBICACIÓN
+      doc.fillColor("#1f2937").fontSize(8).font("Helvetica-Bold")
+         .text("COD. PAT.", 50, yPosition, { width: 70 }) // ✅ MÁS ANCHO (70px)
+         .text("MODELO", 125, yPosition, { width: 100 }) // ✅ AJUSTADO
+         .text("IP", 230, yPosition, { width: 80 }) // ✅ MÁS ANCHO
+         .text("MAC", 315, yPosition, { width: 100 }) // ✅ MÁS ANCHO
+         .text("USUARIO/ESTADO", 420, yPosition, { width: 150 }) // ✅ MÁS ANCHO
+         .text("OFICINA", 575, yPosition, { width: 80 }) // ✅ MÁS ANCHO
+         .text("SITUACIÓN", 660, yPosition, { width: 60 }); // ✅ AJUSTADO
+
+      yPosition += 10;
+      doc.moveTo(50, yPosition).lineTo(725, yPosition).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
+      yPosition += 20;
+
+      // Filas de impresoras
+      impresoras.forEach((impresora, index) => {
+        // Verificar si necesita nueva página
+        if (yPosition > 700) {
+          doc.addPage();
+          yPosition = 50;
+          
+          // Header de la tabla en nueva página
+          doc.fillColor("#1f2937").fontSize(8).font("Helvetica-Bold")
+             .text("COD. PAT.", 50, yPosition, { width: 70 })
+             .text("MODELO", 125, yPosition, { width: 100 })
+             .text("IP", 230, yPosition, { width: 80 })
+             .text("MAC", 315, yPosition, { width: 100 })
+             .text("USUARIO/ESTADO", 420, yPosition, { width: 150 })
+             .text("OFICINA", 575, yPosition, { width: 80 })
+             .text("SITUACIÓN", 660, yPosition, { width: 60 });
+
+          yPosition += 10;
+          doc.moveTo(50, yPosition).lineTo(725, yPosition).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
+          yPosition += 20;
+        }
+
+        // Código Patrimonial - CON MÁS ESPACIO
+        doc
+          .fillColor("#374151")
+          .fontSize(7)
+          .font("Helvetica")
+          .text(impresora.codigoPatrimonial || "Sin código", 50, yPosition, { width: 70 });
+
+        // Modelo
+        doc.text(impresora.modelo || "N/A", 125, yPosition, { width: 100 });
+
+        // IP - CON MÁS ANCHO
+        doc.text(impresora.ip || "N/A", 230, yPosition, { width: 80 });
+
+        // MAC - CON MÁS ANCHO
+        doc.text(impresora.mac || "N/A", 315, yPosition, { width: 100 });
+
+        // Usuario/Estado - CON MÁS ANCHO
+        let usuarioEstado = "";
+        if (impresora.usuario_nombres && impresora.usuario_apellidos) {
+          usuarioEstado = `${impresora.usuario_nombres} ${impresora.usuario_apellidos}`;
+        } else {
+          usuarioEstado = impresora.estado_especial ? impresora.estado_especial.toUpperCase() : "DISPONIBLE";
+        }
+        doc.text(usuarioEstado, 420, yPosition, { width: 150 });
+
+        // Oficina - CON MÁS ANCHO
+        doc.text(impresora.oficina || "N/A", 575, yPosition, { width: 80 });
+
+        // Situación con color
+        const situacion = impresora.estado_especial || "disponible";
+        const situacionColor = ReporteController.getColorPorSituacion(situacion);
+        doc
+          .fillColor(situacionColor)
+          .fontSize(7)
+          .font("Helvetica-Bold")
+          .text(situacion.toUpperCase(), 660, yPosition, { width: 60 });
+
+        yPosition += 20;
+
+        // Línea separadora entre filas (sutil)
+        if (index < impresoras.length - 1) {
+          doc.moveTo(50, yPosition - 5).lineTo(725, yPosition - 5)
+             .strokeColor("#f3f4f6").lineWidth(0.3).stroke();
+        }
+      });
+    } else {
+      doc
+        .fillColor("#6b7280")
+        .fontSize(12)
+        .font("Helvetica")
+        .text("No se encontraron impresoras en el sistema.", 50, yPosition);
+    }
+
+    console.log("PDF de reporte general de impresoras generado exitosamente");
+    doc.end();
+  } catch (err: any) {
+    console.error("Error al generar reporte general de impresoras:", err);
+
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: "Error al generar reporte general de impresoras",
+        details: err?.message || "Error desconocido",
+      });
+    }
+  }
+}
 
   static async generarReporteEquipo(
     req: Request,
