@@ -5,6 +5,32 @@ import { RowDataPacket } from "mysql2";
 import { HistorialHelper } from "../utils/historialHelper";
 
 export class ReporteController {
+  
+  // MÉTODO MEJORADO PARA VERIFICAR ESPACIO EN PÁGINA
+  private static necesitaNuevaPagina(doc: PDFKit.PDFDocument, yPosition: number, filasNecesarias: number = 1): number {
+    // Solo verificar para la próxima fila, no para todas
+    if (yPosition > 750) { // Límite más alto
+        doc.addPage();
+        return 50;
+    }
+    return yPosition;
+  }
+
+  // MÉTODO PARA AGREGAR HEADER DE TABLA EN NUEVA PÁGINA
+  private static agregarHeaderTablaGeneral(doc: PDFKit.PDFDocument, y: number): void {
+    doc.fillColor("#1f2937").fontSize(8).font("Helvetica-Bold")
+       .text("COD. PAT.", 50, y)
+       .text("EQUIPO", 100, y)
+       .text("IP", 180, y)
+       .text("MAC", 230, y)
+       .text("USUARIO/ESTADO", 300, y)
+       .text("OFICINA", 450, y)
+       .text("SITUACIÓN", 520, y);
+
+    y += 10;
+    doc.moveTo(50, y).lineTo(580, y).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
+  }
+
   static async generarReporteUsuario(
     req: Request,
     res: Response
@@ -57,9 +83,9 @@ export class ReporteController {
         [id]
       );
 
-// 3. HISTÓRICO DE EQUIPOS (equipos que el usuario tuvo pero NO tiene actualmente)
-const [historicoEquipos] = await db.promise().query<RowDataPacket[]>(
-  `SELECT e.*,
+      // 3. HISTÓRICO DE EQUIPOS
+      const [historicoEquipos] = await db.promise().query<RowDataPacket[]>(
+        `SELECT e.*,
           (SELECT hc.createdAt FROM historial_cambios hc 
            WHERE hc.activo_id = e.id AND hc.tipo_activo = 'equipo' 
            AND (hc.accion = 'asignacion' OR hc.accion = 'asignado' OR hc.accion LIKE '%asign%' OR hc.accion = 'reasignacion')
@@ -78,17 +104,17 @@ const [historicoEquipos] = await db.promise().query<RowDataPacket[]>(
      SELECT id FROM equipos WHERE usuarioId = ? AND estado_especial = 'asignado'
    )
    ORDER BY fecha_desasignacion DESC, fecha_asignacion DESC`,
-  [
-    `%${usuarioData.nombres}%`,
-    `%${usuarioData.apellidos}%`,
-    `%${usuarioData.nombres} ${usuarioData.apellidos}%`,
-    id,
-  ]
-);
+        [
+          `%${usuarioData.nombres}%`,
+          `%${usuarioData.apellidos}%`,
+          `%${usuarioData.nombres} ${usuarioData.apellidos}%`,
+          id,
+        ]
+      );
 
-// 4. HISTÓRICO DE IMPRESORAS (impresoras que el usuario tuvo pero NO tiene actualmente)
-const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
-  `SELECT i.*,
+      // 4. HISTÓRICO DE IMPRESORAS
+      const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
+        `SELECT i.*,
           (SELECT hc.createdAt FROM historial_cambios hc 
            WHERE hc.activo_id = i.id AND hc.tipo_activo = 'impresora' 
            AND (hc.accion = 'asignacion' OR hc.accion = 'asignada' OR hc.accion LIKE '%asign%' OR hc.accion = 'reasignacion')
@@ -107,121 +133,13 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
      SELECT id FROM impresoras WHERE usuarioId = ? AND estado_especial = 'asignado'
    )
    ORDER BY fecha_desasignacion DESC, fecha_asignacion DESC`,
-  [
-    `%${usuarioData.nombres}%`,
-    `%${usuarioData.apellidos}%`,
-    `%${usuarioData.nombres} ${usuarioData.apellidos}%`,
-    id,
-  ]
-);
-
-      console.log("=== DEBUG REPORTE ===");
-      console.log("Usuario:", usuarioData.nombres, usuarioData.apellidos);
-      console.log("Equipos actuales:", equiposActuales.length);
-      equiposActuales.forEach((eq, i) => {
-        console.log(`Equipo ${i}:`, {
-          id: eq.id,
-          codigo: eq.codigoPatrimonial,
-          fecha_asignacion: eq.fecha_asignacion,
-          tieneFecha: !!eq.fecha_asignacion,
-        });
-      });
-
-      console.log("Impresoras actuales:", impresorasActuales.length);
-      impresorasActuales.forEach((imp, i) => {
-        console.log(`Impresora ${i}:`, {
-          id: imp.id,
-          codigo: imp.codigoPatrimonial,
-          fecha_asignacion: imp.fecha_asignacion,
-          tieneFecha: !!imp.fecha_asignacion,
-        });
-      });
-
-      console.log("Histórico equipos:", historicoEquipos.length);
-      historicoEquipos.forEach((eq, i) => {
-        console.log(`Histórico equipo ${i}:`, {
-          id: eq.id,
-          codigo: eq.codigoPatrimonial,
-          fecha_asignacion: eq.fecha_asignacion,
-          fecha_desasignacion: eq.fecha_desasignacion,
-        });
-      });
-
-      console.log("Histórico impresoras:", historicoImpresoras.length);
-      historicoImpresoras.forEach((imp, i) => {
-        console.log(`Histórico impresora ${i}:`, {
-          id: imp.id,
-          codigo: imp.codigoPatrimonial,
-          fecha_asignacion: imp.fecha_asignacion,
-          fecha_desasignacion: imp.fecha_desasignacion,
-        });
-      });
-      console.log("=== FIN DEBUG ===");
-
-      // Debug para ver qué hay en el historial
-      const [historialDebug] = await db.promise().query<RowDataPacket[]>(
-        `SELECT tipo_activo, activo_id, accion, detalles, createdAt 
-         FROM historial_cambios 
-         WHERE tipo_activo IN ('equipo', 'impresora') 
-         AND (accion LIKE '%asign%' OR accion = 'revision' OR accion = 'baja' OR accion = 'desasignacion')
-         ORDER BY createdAt DESC LIMIT 10`
+        [
+          `%${usuarioData.nombres}%`,
+          `%${usuarioData.apellidos}%`,
+          `%${usuarioData.nombres} ${usuarioData.apellidos}%`,
+          id,
+        ]
       );
-      console.log("Últimos 10 registros de historial:", historialDebug);
-
-      console.log(
-        `Datos obtenidos - Equipos actuales: ${equiposActuales.length}, ` +
-          `Impresoras actuales: ${impresorasActuales.length}, ` +
-          `Histórico equipos: ${historicoEquipos.length}, ` +
-          `Histórico impresoras: ${historicoImpresoras.length}`
-      );
-
-      console.log(
-        "IDs de equipos encontrados en histórico:",
-        historicoEquipos.map((e) => e.id)
-      );
-      console.log(
-        "IDs de impresoras encontrados en histórico:",
-        historicoImpresoras.map((i) => i.id)
-      );
-
-      // Debug para ver qué registros encuentra para cada equipo histórico
-      for (const equipo of historicoEquipos) {
-        const [asignaciones] = await db.promise().query<RowDataPacket[]>(
-          `SELECT accion, createdAt, detalles FROM historial_cambios 
-           WHERE activo_id = ? AND tipo_activo = 'equipo' 
-           AND (accion LIKE '%asign%' OR accion = 'desasignacion')
-           ORDER BY createdAt DESC`,
-          [equipo.id]
-        );
-        console.log(
-          `Registros de asignación para equipo ${equipo.id}:`,
-          asignaciones
-        );
-      }
-
-      // Debug específico para cada equipo histórico
-      historicoEquipos.forEach((eq, i) => {
-        console.log(`Histórico equipo ${i} (ID: ${eq.id}):`, {
-          fecha_asignacion: eq.fecha_asignacion,
-          fecha_desasignacion: eq.fecha_desasignacion,
-          estado_especial: eq.estado_especial,
-          usuarioId: eq.usuarioId,
-        });
-      });
-
-      console.log(
-        "Impresoras con usuarioId:",
-        impresorasActuales.map((i) => ({
-          id: i.id,
-          usuarioId: i.usuarioId,
-          estado_especial: i.estado_especial,
-        }))
-      );
-
-      console.log("Búsquedas:", [
-        `%${usuarioData.nombres}%`,
-        `%${usuarioData.nombres} ${usuarioData.apellidos}%`,
-      ]);
 
       // Crear PDF
       const doc = new PDFDocument({
@@ -263,6 +181,7 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
         let yPosition = 130;
 
         // 1. INFORMACIÓN DEL USUARIO
+        yPosition = ReporteController.necesitaNuevaPagina(doc, yPosition, 10);
         doc
           .fillColor("#1f2937")
           .fontSize(16)
@@ -273,13 +192,10 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
         ReporteController.agregarTablaUsuario(doc, usuarioData, yPosition);
         yPosition += 120;
 
-        // 2. EQUIPOS ACTUALMENTE ASIGNADOS
+        // 2. EQUIPOS ACTUALMENTE ASIGNADOS - VERSIÓN MEJORADA
         if (equiposActuales.length > 0) {
-          if (yPosition > 600) {
-            doc.addPage();
-            yPosition = 50;
-          }
-
+          yPosition = ReporteController.necesitaNuevaPagina(doc, yPosition, equiposActuales.length + 5);
+          
           doc
             .fillColor("#1f2937")
             .fontSize(16)
@@ -298,13 +214,9 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
             );
           yPosition += 20;
 
-          ReporteController.agregarTablaEquiposActuales(
-            doc,
-            equiposActuales,
-            yPosition
-          );
-          yPosition += equiposActuales.length * 20 + 40;
+          yPosition = ReporteController.agregarTablaEquiposActualesMejorado(doc, equiposActuales, yPosition);
         } else {
+          yPosition = ReporteController.necesitaNuevaPagina(doc, yPosition, 3);
           doc
             .fillColor("#6b7280")
             .fontSize(12)
@@ -317,12 +229,9 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
           yPosition += 30;
         }
 
-        // 3. IMPRESORAS ACTUALMENTE ASIGNADAS
+        // 3. IMPRESORAS ACTUALMENTE ASIGNADAS - VERSIÓN MEJORADA
         if (impresorasActuales.length > 0) {
-          if (yPosition > 600) {
-            doc.addPage();
-            yPosition = 50;
-          }
+          yPosition = ReporteController.necesitaNuevaPagina(doc, yPosition, impresorasActuales.length + 5);
 
           doc
             .fillColor("#1f2937")
@@ -342,13 +251,9 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
             );
           yPosition += 20;
 
-          ReporteController.agregarTablaImpresorasActuales(
-            doc,
-            impresorasActuales,
-            yPosition
-          );
-          yPosition += impresorasActuales.length * 20 + 40;
+          yPosition = ReporteController.agregarTablaImpresorasActualesMejorado(doc, impresorasActuales, yPosition);
         } else {
+          yPosition = ReporteController.necesitaNuevaPagina(doc, yPosition, 3);
           doc
             .fillColor("#6b7280")
             .fontSize(12)
@@ -361,12 +266,9 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
           yPosition += 30;
         }
 
-        // 4. HISTÓRICO DE EQUIPOS
+        // 4. HISTÓRICO DE EQUIPOS - VERSIÓN MEJORADA
         if (historicoEquipos.length > 0) {
-          if (yPosition > 600) {
-            doc.addPage();
-            yPosition = 50;
-          }
+          yPosition = ReporteController.necesitaNuevaPagina(doc, yPosition, historicoEquipos.length + 5);
 
           doc
             .fillColor("#1f2937")
@@ -386,20 +288,12 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
             );
           yPosition += 20;
 
-          ReporteController.agregarTablaHistoricoEquipos(
-            doc,
-            historicoEquipos,
-            yPosition
-          );
-          yPosition += historicoEquipos.length * 25 + 40;
+          yPosition = ReporteController.agregarTablaHistoricoEquiposMejorado(doc, historicoEquipos, yPosition);
         }
 
-        // 5. HISTÓRICO DE IMPRESORAS
+        // 5. HISTÓRICO DE IMPRESORAS - VERSIÓN MEJORADA
         if (historicoImpresoras.length > 0) {
-          if (yPosition > 600) {
-            doc.addPage();
-            yPosition = 50;
-          }
+          yPosition = ReporteController.necesitaNuevaPagina(doc, yPosition, historicoImpresoras.length + 5);
 
           doc
             .fillColor("#1f2937")
@@ -419,11 +313,7 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
             );
           yPosition += 20;
 
-          ReporteController.agregarTablaHistoricoImpresoras(
-            doc,
-            historicoImpresoras,
-            yPosition
-          );
+          ReporteController.agregarTablaHistoricoImpresorasMejorado(doc, historicoImpresoras, yPosition);
         }
 
         console.log("PDF generado exitosamente");
@@ -450,76 +340,24 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
     }
   }
 
-  // Métodos auxiliares para tablas (se mantienen igual)
-  private static agregarTablaUsuario(
-    doc: PDFKit.PDFDocument,
-    usuario: any,
-    yPosition: number
-  ): void {
-    const rows = [
-      ["Nombres:", usuario.nombres],
-      ["Apellidos:", usuario.apellidos],
-      ["DNI:", usuario.dni],
-      ["Oficina:", usuario.oficina],
-      ["Tipo de Contrato:", usuario.tipoContrato],
-      [
-        "Fecha de Registro:",
-        new Date(usuario.createdAt).toLocaleDateString("es-PE"),
-      ],
-    ];
-
-    ReporteController.agregarTablaDatos(doc, rows, yPosition);
-  }
-
-  private static getColorPorAccion(accion: string): string {
-    const colores: { [key: string]: string } = {
-      asignacion: "#059669", // verde
-      asignado: "#059669", // verde
-      desasignacion: "#dc2626", // rojo
-      revision: "#d97706", // amarillo/naranja
-      reparar: "#2563eb", // azul
-      baja: "#dc2626", // rojo
-      disponible: "#059669", // verde
-      actualizacion: "#7c3aed", // morado
-      traslado: "#7c3aed", // morado
-    };
-    return colores[accion?.toLowerCase()] || "#374151"; // gris por defecto
-  }
-
-  private static agregarTablaEquiposActuales(
+  // MÉTODOS MEJORADOS PARA TABLAS CON CONTROL DE PÁGINAS
+  private static agregarTablaEquiposActualesMejorado(
     doc: PDFKit.PDFDocument,
     equipos: any[],
     startY: number
-  ): void {
+  ): number {
     let y = startY;
 
     // Header
-    doc
-      .fillColor("#1f2937")
-      .fontSize(9)
-      .font("Helvetica-Bold")
-      .text("COD. PAT.", 50, y);
-    doc.text("EQUIPO", 120, y);
-    doc.text("FECHA ASIGNACIÓN", 250, y);
-    doc.text("ESTADO", 400, y);
-
-    y += 12;
-
-    // Línea separadora
-    doc
-      .moveTo(50, y)
-      .lineTo(550, y)
-      .strokeColor("#e5e7eb")
-      .lineWidth(0.5)
-      .stroke();
-
-    y += 8;
+    ReporteController.agregarHeaderEquiposActuales(doc, y);
+    y += 20;
 
     // Filas
-    equipos.forEach((equipo) => {
-      if (y > 750) {
-        doc.addPage();
-        y = 50;
+    equipos.forEach((equipo, index) => {
+      y = ReporteController.necesitaNuevaPagina(doc, y, 1);
+      if (y === 50) {
+        ReporteController.agregarHeaderEquiposActuales(doc, y);
+        y += 20;
       }
 
       doc
@@ -543,43 +381,45 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
         .text(equipo.estado || "Activo", 400, y, { width: 80 });
 
       y += 20;
+
+      // Línea separadora entre filas
+      if (index < equipos.length - 1) {
+        doc.moveTo(50, y - 5).lineTo(550, y - 5)
+           .strokeColor("#f3f4f6").lineWidth(0.3).stroke();
+      }
     });
+
+    return y + 20;
   }
 
-  private static agregarTablaImpresorasActuales(
+  private static agregarHeaderEquiposActuales(doc: PDFKit.PDFDocument, y: number): void {
+    doc.fillColor("#1f2937").fontSize(9).font("Helvetica-Bold")
+       .text("COD. PAT.", 50, y)
+       .text("EQUIPO", 120, y)
+       .text("FECHA ASIGNACIÓN", 250, y)
+       .text("ESTADO", 400, y);
+
+    y += 12;
+    doc.moveTo(50, y).lineTo(550, y).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
+  }
+
+  private static agregarTablaImpresorasActualesMejorado(
     doc: PDFKit.PDFDocument,
     impresoras: any[],
     startY: number
-  ): void {
+  ): number {
     let y = startY;
 
     // Header
-    doc
-      .fillColor("#1f2937")
-      .fontSize(9)
-      .font("Helvetica-Bold")
-      .text("COD. PAT.", 50, y);
-    doc.text("MODELO", 120, y);
-    doc.text("FECHA ASIGNACIÓN", 250, y);
-    doc.text("ESTADO", 400, y);
-
-    y += 12;
-
-    // Línea separadora
-    doc
-      .moveTo(50, y)
-      .lineTo(550, y)
-      .strokeColor("#e5e7eb")
-      .lineWidth(0.5)
-      .stroke();
-
-    y += 8;
+    ReporteController.agregarHeaderImpresorasActuales(doc, y);
+    y += 20;
 
     // Filas
-    impresoras.forEach((impresora) => {
-      if (y > 750) {
-        doc.addPage();
-        y = 50;
+    impresoras.forEach((impresora, index) => {
+      y = ReporteController.necesitaNuevaPagina(doc, y, 1);
+      if (y === 50) {
+        ReporteController.agregarHeaderImpresorasActuales(doc, y);
+        y += 20;
       }
 
       doc
@@ -603,44 +443,45 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
         .text(impresora.estado || "Activo", 400, y, { width: 80 });
 
       y += 20;
+
+      // Línea separadora entre filas
+      if (index < impresoras.length - 1) {
+        doc.moveTo(50, y - 5).lineTo(550, y - 5)
+           .strokeColor("#f3f4f6").lineWidth(0.3).stroke();
+      }
     });
+
+    return y + 20;
   }
 
-  private static agregarTablaHistoricoEquipos(
+  private static agregarHeaderImpresorasActuales(doc: PDFKit.PDFDocument, y: number): void {
+    doc.fillColor("#1f2937").fontSize(9).font("Helvetica-Bold")
+       .text("COD. PAT.", 50, y)
+       .text("MODELO", 120, y)
+       .text("FECHA ASIGNACIÓN", 250, y)
+       .text("ESTADO", 400, y);
+
+    y += 12;
+    doc.moveTo(50, y).lineTo(550, y).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
+  }
+
+  private static agregarTablaHistoricoEquiposMejorado(
     doc: PDFKit.PDFDocument,
     equipos: any[],
     startY: number
-  ): void {
+  ): number {
     let y = startY;
 
     // Header
-    doc
-      .fillColor("#1f2937")
-      .fontSize(8)
-      .font("Helvetica-Bold")
-      .text("CÓDIGO", 50, y);
-    doc.text("EQUIPO", 90, y);
-    doc.text("FECHA ASIGNACIÓN", 200, y);
-    doc.text("FECHA DESASIGNACIÓN", 320, y);
-    doc.text("SITUACIÓN ACTUAL", 450, y);
-
-    y += 10;
-
-    // Línea separadora
-    doc
-      .moveTo(50, y)
-      .lineTo(550, y)
-      .strokeColor("#e5e7eb")
-      .lineWidth(0.5)
-      .stroke();
-
-    y += 8;
+    ReporteController.agregarHeaderHistoricoEquipos(doc, y);
+    y += 18;
 
     // Filas
-    equipos.forEach((equipo) => {
-      if (y > 750) {
-        doc.addPage();
-        y = 50;
+    equipos.forEach((equipo, index) => {
+      y = ReporteController.necesitaNuevaPagina(doc, y, 1);
+      if (y === 50) {
+        ReporteController.agregarHeaderHistoricoEquipos(doc, y);
+        y += 18;
       }
 
       doc
@@ -671,44 +512,46 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
         .text(equipo.estado_especial || "Disponible", 450, y, { width: 70 });
 
       y += 25;
+
+      // Línea separadora entre filas
+      if (index < equipos.length - 1) {
+        doc.moveTo(50, y - 10).lineTo(550, y - 10)
+           .strokeColor("#f3f4f6").lineWidth(0.3).stroke();
+      }
     });
+
+    return y + 20;
   }
 
-  private static agregarTablaHistoricoImpresoras(
+  private static agregarHeaderHistoricoEquipos(doc: PDFKit.PDFDocument, y: number): void {
+    doc.fillColor("#1f2937").fontSize(8).font("Helvetica-Bold")
+       .text("CÓDIGO", 50, y)
+       .text("EQUIPO", 90, y)
+       .text("FECHA ASIGNACIÓN", 200, y)
+       .text("FECHA DESASIGNACIÓN", 320, y)
+       .text("SITUACIÓN ACTUAL", 450, y);
+
+    y += 10;
+    doc.moveTo(50, y).lineTo(550, y).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
+  }
+
+  private static agregarTablaHistoricoImpresorasMejorado(
     doc: PDFKit.PDFDocument,
     impresoras: any[],
     startY: number
-  ): void {
+  ): number {
     let y = startY;
 
     // Header
-    doc
-      .fillColor("#1f2937")
-      .fontSize(8)
-      .font("Helvetica-Bold")
-      .text("CÓDIGO", 50, y);
-    doc.text("MODELO", 90, y);
-    doc.text("FECHA ASIGNACIÓN", 200, y);
-    doc.text("FECHA DESASIGNACIÓN", 320, y);
-    doc.text("SITUACIÓN ACTUAL", 450, y);
-
-    y += 10;
-
-    // Línea separadora
-    doc
-      .moveTo(50, y)
-      .lineTo(550, y)
-      .strokeColor("#e5e7eb")
-      .lineWidth(0.5)
-      .stroke();
-
-    y += 8;
+    ReporteController.agregarHeaderHistoricoImpresoras(doc, y);
+    y += 18;
 
     // Filas
-    impresoras.forEach((impresora) => {
-      if (y > 750) {
-        doc.addPage();
-        y = 50;
+    impresoras.forEach((impresora, index) => {
+      y = ReporteController.necesitaNuevaPagina(doc, y, 1);
+      if (y === 50) {
+        ReporteController.agregarHeaderHistoricoImpresoras(doc, y);
+        y += 18;
       }
 
       doc
@@ -739,7 +582,301 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
         .text(impresora.estado_especial || "Disponible", 450, y, { width: 70 });
 
       y += 25;
+
+      // Línea separadora entre filas
+      if (index < impresoras.length - 1) {
+        doc.moveTo(50, y - 10).lineTo(550, y - 10)
+           .strokeColor("#f3f4f6").lineWidth(0.3).stroke();
+      }
     });
+
+    return y + 20;
+  }
+
+  private static agregarHeaderHistoricoImpresoras(doc: PDFKit.PDFDocument, y: number): void {
+    doc.fillColor("#1f2937").fontSize(8).font("Helvetica-Bold")
+       .text("CÓDIGO", 50, y)
+       .text("MODELO", 90, y)
+       .text("FECHA ASIGNACIÓN", 200, y)
+       .text("FECHA DESASIGNACIÓN", 320, y)
+       .text("SITUACIÓN ACTUAL", 450, y);
+
+    y += 10;
+    doc.moveTo(50, y).lineTo(550, y).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
+  }
+
+  // NUEVO REPORTE GENERAL DE EQUIPOS - VERSIÓN CON MÁS ANCHO PARA IP Y MAC
+  static async generarReporteGeneralEquipos(
+    req: Request,
+    res: Response
+  ): Promise<void> {
+    try {
+      console.log("Generando reporte general de equipos");
+
+      // Obtener todos los equipos con información de usuario
+      const [equipos] = await db.promise().query<RowDataPacket[]>(
+        `SELECT e.*, 
+                u.nombres as usuario_nombres, 
+                u.apellidos as usuario_apellidos,
+                u.dni as usuario_dni,
+                u.oficina as usuario_oficina
+         FROM equipos e
+         LEFT JOIN usuarios u ON e.usuarioId = u.id
+         ORDER BY e.estado_especial, e.oficina, e.tipo`
+      );
+
+      console.log(`Equipos encontrados: ${equipos.length}`);
+
+      // Crear PDF
+      const doc = new PDFDocument({
+        margin: 50,
+        bufferPages: true,
+        size: 'A4',
+        layout: 'landscape'
+      });
+
+      // Configurar headers
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=reporte-general-equipos-${new Date().toISOString().split('T')[0]}.pdf`
+      );
+
+      doc.pipe(res);
+
+      // Header
+      doc
+        .fillColor("#1f2937")
+        .fontSize(18)
+        .font("Helvetica-Bold")
+        .text("SISTEMA DE INVENTARIO - REPORTE GENERAL DE EQUIPOS", 50, 50);
+
+      doc
+        .fillColor("#6b7280")
+        .fontSize(10)
+        .font("Helvetica")
+        .text(`Generado: ${new Date().toLocaleString("es-PE")}`, 50, 75)
+        .text(`Total de equipos: ${equipos.length}`, 50, 90);
+
+      // Línea separadora
+      doc
+        .moveTo(50, 110)
+        .lineTo(780, 110)
+        .strokeColor("#e5e7eb")
+        .lineWidth(1)
+        .stroke();
+
+      let yPosition = 130;
+
+      // Tabla de equipos - CON ANCHOS MEJORADOS
+      if (equipos.length > 0) {
+        // Header de la tabla con nuevos anchos
+        doc.fillColor("#1f2937").fontSize(8).font("Helvetica-Bold")
+           .text("COD. PAT.", 50, yPosition, { width: 45 })
+           .text("EQUIPO", 100, yPosition, { width: 80 })
+           .text("IP", 185, yPosition, { width: 70 })
+           .text("MAC", 260, yPosition, { width: 90 })
+           .text("USUARIO/ESTADO", 355, yPosition, { width: 130 })
+           .text("OFICINA", 490, yPosition, { width: 65 })
+           .text("SITUACIÓN", 560, yPosition, { width: 50 });
+
+        yPosition += 10;
+        doc.moveTo(50, yPosition).lineTo(615, yPosition).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
+        yPosition += 20;
+
+        // Filas de equipos con nuevos anchos
+        equipos.forEach((equipo, index) => {
+          // Verificar si necesita nueva página
+          if (yPosition > 700) {
+            doc.addPage();
+            yPosition = 50;
+            
+            // Header de la tabla en nueva página con nuevos anchos
+            doc.fillColor("#1f2937").fontSize(8).font("Helvetica-Bold")
+               .text("COD. PAT.", 50, yPosition, { width: 45 })
+               .text("EQUIPO", 100, yPosition, { width: 80 })
+               .text("IP", 185, yPosition, { width: 70 })
+               .text("MAC", 260, yPosition, { width: 90 })
+               .text("USUARIO/ESTADO", 355, yPosition, { width: 130 })
+               .text("OFICINA", 490, yPosition, { width: 65 })
+               .text("SITUACIÓN", 560, yPosition, { width: 50 });
+
+            yPosition += 10;
+            doc.moveTo(50, yPosition).lineTo(615, yPosition).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
+            yPosition += 20;
+          }
+
+          // Código Patrimonial
+          doc
+            .fillColor("#374151")
+            .fontSize(7)
+            .font("Helvetica")
+            .text(equipo.codigoPatrimonial || "Sin código", 50,yPosition, { width: 45 });
+
+          // Equipo (Tipo + Marca + Modelo) - con nuevo ancho
+          const textoEquipo = `${equipo.tipo || ''} ${equipo.marca || ''} ${equipo.modelo || ''}`.trim();
+          doc.text(textoEquipo, 100, yPosition, { width: 80 });
+
+          // IP - CON MÁS ANCHO (70px)
+          doc.text(equipo.ip || "N/A", 185, yPosition, { width: 70 });
+
+          // MAC - CON MÁS ANCHO (90px)
+          doc.text(equipo.mac || "N/A", 260, yPosition, { width: 90 });
+
+          // Usuario/Estado - con nuevo ancho
+          let usuarioEstado = "";
+          if (equipo.usuario_nombres && equipo.usuario_apellidos) {
+            usuarioEstado = `${equipo.usuario_nombres} ${equipo.usuario_apellidos}`;
+          } else {
+            usuarioEstado = equipo.estado_especial ? equipo.estado_especial.toUpperCase() : "DISPONIBLE";
+          }
+          doc.text(usuarioEstado, 355, yPosition, { width: 130 });
+
+          // Oficina
+          doc.text(equipo.oficina || "N/A", 490, yPosition, { width: 65 });
+
+          // Situación con color
+          const situacion = equipo.estado_especial || "disponible";
+          const situacionColor = ReporteController.getColorPorSituacion(situacion);
+          doc
+            .fillColor(situacionColor)
+            .fontSize(7)
+            .font("Helvetica-Bold")
+            .text(situacion.toUpperCase(), 560, yPosition, { width: 50 });
+
+          yPosition += 20;
+
+          // Línea separadora entre filas ajustada
+          if (index < equipos.length - 1) {
+            doc.moveTo(50, yPosition - 5).lineTo(615, yPosition - 5)
+               .strokeColor("#f3f4f6").lineWidth(0.3).stroke();
+          }
+        });
+      } else {
+        doc
+          .fillColor("#6b7280")
+          .fontSize(12)
+          .font("Helvetica")
+          .text("No se encontraron equipos en el sistema.", 50, yPosition);
+      }
+
+      console.log("PDF de reporte general generado exitosamente");
+      doc.end();
+    } catch (err: any) {
+      console.error("Error al generar reporte general de equipos:", err);
+
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: "Error al generar reporte general de equipos",
+          details: err?.message || "Error desconocido",
+        });
+      }
+    }
+  }
+
+  private static agregarTablaGeneralEquipos(
+    doc: PDFKit.PDFDocument,
+    equipos: any[],
+    startY: number
+  ): number {
+    let y = startY;
+
+    // Header de la tabla
+    ReporteController.agregarHeaderTablaGeneral(doc, y);
+    y += 20;
+
+    // Filas de equipos
+    equipos.forEach((equipo, index) => {
+      y = ReporteController.necesitaNuevaPagina(doc, y, 1);
+      if (y === 50) {
+        ReporteController.agregarHeaderTablaGeneral(doc, y);
+        y += 20;
+      }
+
+      // Código Patrimonial
+      doc
+        .fillColor("#374151")
+        .fontSize(7)
+        .font("Helvetica")
+        .text(equipo.codigoPatrimonial || "Sin código", 50, y, { width: 45 });
+
+      // Equipo (Tipo + Marca + Modelo)
+      const textoEquipo = `${equipo.tipo || ''} ${equipo.marca || ''} ${equipo.modelo || ''}`.trim();
+      doc.text(textoEquipo, 100, y, { width: 75 });
+
+      // IP
+      doc.text(equipo.ip || "N/A", 180, y, { width: 45 });
+
+      // MAC
+      doc.text(equipo.mac || "N/A", 230, y, { width: 65 });
+
+      // Usuario/Estado
+      let usuarioEstado = "";
+      if (equipo.usuario_nombres && equipo.usuario_apellidos) {
+        usuarioEstado = `${equipo.usuario_nombres} ${equipo.usuario_apellidos}`;
+      } else {
+        usuarioEstado = equipo.estado_especial ? equipo.estado_especial.toUpperCase() : "DISPONIBLE";
+      }
+      doc.text(usuarioEstado, 300, y, { width: 145 });
+
+      // Oficina
+      doc.text(equipo.oficina || "N/A", 450, y, { width: 65 });
+
+      // Situación con color
+      const situacion = equipo.estado_especial || "disponible";
+      const situacionColor = ReporteController.getColorPorSituacion(situacion);
+      doc
+        .fillColor(situacionColor)
+        .fontSize(7)
+        .font("Helvetica-Bold")
+        .text(situacion.toUpperCase(), 520, y, { width: 50 });
+
+      y += 20;
+
+      // Línea separadora entre filas
+      if (index < equipos.length - 1) {
+        doc.moveTo(50, y - 5).lineTo(580, y - 5)
+           .strokeColor("#f3f4f6").lineWidth(0.3).stroke();
+      }
+    });
+
+    return y + 20;
+  }
+
+  // Métodos auxiliares existentes (se mantienen igual)
+  private static agregarTablaUsuario(
+    doc: PDFKit.PDFDocument,
+    usuario: any,
+    yPosition: number
+  ): void {
+    const rows = [
+      ["Nombres:", usuario.nombres],
+      ["Apellidos:", usuario.apellidos],
+      ["DNI:", usuario.dni],
+      ["Oficina:", usuario.oficina],
+      ["Tipo de Contrato:", usuario.tipoContrato],
+      [
+        "Fecha de Registro:",
+        new Date(usuario.createdAt).toLocaleDateString("es-PE"),
+      ],
+    ];
+
+    ReporteController.agregarTablaDatos(doc, rows, yPosition);
+  }
+
+  private static getColorPorAccion(accion: string): string {
+    const colores: { [key: string]: string } = {
+      asignacion: "#059669",
+      asignado: "#059669",
+      desasignacion: "#dc2626",
+      revision: "#d97706",
+      reparar: "#2563eb",
+      baja: "#dc2626",
+      disponible: "#059669",
+      actualizacion: "#7c3aed",
+      traslado: "#7c3aed",
+    };
+    return colores[accion?.toLowerCase()] || "#374151";
   }
 
   private static agregarTablaDatos(
@@ -768,24 +905,24 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
 
   private static getColorPorSituacion(situacion: string): string {
     const colores: { [key: string]: string } = {
-      asignado: "#059669", // verde
-      disponible: "#2563eb", // azul
-      revision: "#d97706", // amarillo/naranja
-      baja: "#dc2626", // rojo
+      asignado: "#059669",
+      disponible: "#2563eb",
+      revision: "#d97706",
+      baja: "#dc2626",
     };
-    return colores[situacion?.toLowerCase()] || "#374151"; // gris por defecto
+    return colores[situacion?.toLowerCase()] || "#374151";
   }
 
   private static getColorPorEstado(estado: string): string {
     const colores: { [key: string]: string } = {
-      bueno: "#059669", // verde
-      regular: "#d97706", // amarillo/naranja
-      malo: "#dc2626", // rojo
-      activo: "#059669", // verde
-      inactivo: "#6b7280", // gris
-      mantenimiento: "#d97706", // amarillo/naranja
+      bueno: "#059669",
+      regular: "#d97706",
+      malo: "#dc2626",
+      activo: "#059669",
+      inactivo: "#6b7280",
+      mantenimiento: "#d97706",
     };
-    return colores[estado?.toLowerCase()] || "#374151"; // gris por defecto
+    return colores[estado?.toLowerCase()] || "#374151";
   }
 
   static async generarReporteEquipo(
@@ -995,7 +1132,6 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
           ["MAC:", equipoData.mac],
           ["Sistema Operativo:", equipoData.so || "N/A"],
           ["Estado del Equipo:", equipoData.estado],
-          // ["Estado Especial:", equipoData.estado_especial || "N/A"],
           [
             "Usuario Actual:",
             equipoData.usuario_id
@@ -1096,7 +1232,7 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
             .fontSize(8)
             .font("Helvetica-Bold")
             .text("FECHA", 50, yPosition);
-          doc.text("ESTADO TÉCNICO", 100, yPosition); // ← Cambiado aquí
+          doc.text("ESTADO TÉCNICO", 100, yPosition);
           doc.text("USUARIO/ESTADO", 200, yPosition);
           doc.text("DETALLES", 350, yPosition);
           doc.text("SITUACIÓN", 480, yPosition);
@@ -1113,10 +1249,10 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
 
           yPosition += 8;
 
-          // Filas del historial
-          // Filas del historial - VERSIÓN CORREGIDA
+          // Filas del historial - VERSIÓN MEJORADA
           historialEquipo.forEach((registro, index) => {
-            if (yPosition > 750) {
+            // Verificar ANTES de escribir si necesita nueva página
+            if (yPosition > 700) {
               doc.addPage();
               yPosition = 50;
 
@@ -1142,9 +1278,7 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
             }
 
             try {
-              const fecha = new Date(registro.createdAt).toLocaleDateString(
-                "es-PE"
-              );
+              const fecha = new Date(registro.createdAt).toLocaleDateString("es-PE");
 
               // Fecha
               doc
@@ -1153,7 +1287,7 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
                 .font("Helvetica")
                 .text(fecha, 50, yPosition, { width: 45 });
 
-              // Estado Técnico y Situación - CORREGIDO (usando equipoData)
+              // Estado Técnico y Situación
               let estadoTecnico = equipoData.estado || "N/A";
               let situacion = equipoData.estado_especial || "N/A";
               let usuarioEstado = "Sin cambios";
@@ -1163,67 +1297,40 @@ const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
                 try {
                   const detalles = JSON.parse(registro.detalles);
 
-                  // Estado Técnico - MEJORADO: Si hay cambio en el historial, usar ese valor
-                  estadoTecnico =
-                    detalles.next?.estado ||
-                    detalles.prev?.estado ||
-                    estadoTecnico;
+                  estadoTecnico = detalles.next?.estado || detalles.prev?.estado || estadoTecnico;
+                  situacion = detalles.next?.estado_especial || detalles.prev?.estado_especial || situacion;
 
-                  // Situación - MEJORADO: Si hay cambio en el historial, usar ese valor
-                  situacion =
-                    detalles.next?.estado_especial ||
-                    detalles.prev?.estado_especial ||
-                    situacion;
-
-           // Usuario/Estado - VERSIÓN MEJORADA (igual que impresoras)
-if (detalles.next?.estado_especial === "revision") {
-  usuarioEstado = "REVISIÓN";
-} else if (detalles.next?.estado_especial === "baja") {
-  usuarioEstado = "BAJA";
-} else if (detalles.next?.estado_especial === "disponible") {
-  usuarioEstado = "DISPONIBLE";
-} else if (
-  detalles.next?.usuarioId &&
-  detalles.prev?.usuarioId !== detalles.next?.usuarioId
-) {
-  const usuarioId = detalles.next.usuarioId;
-  const usuarioInfo = usuariosInfo.find(
-    (u) => u.usuarioId === usuarioId
-  );
-  usuarioEstado = usuarioInfo
-    ? `${usuarioInfo.nombres} ${usuarioInfo.apellidos}`
-    : `Usuario ${usuarioId}`;
-} else if (
-  !detalles.next?.usuarioId &&
-  detalles.prev?.usuarioId
-) {
-  usuarioEstado = "SIN USUARIO";
-} else if (detalles.next?.estado_especial) {
-  usuarioEstado = detalles.next.estado_especial.toUpperCase();
-} else if (detalles.prev?.estado_especial) {
-  usuarioEstado = detalles.prev.estado_especial.toUpperCase();
-} else {
-  usuarioEstado = situacion.toUpperCase(); // ← Esto mostrará "DISPONIBLE", "REVISIÓN", etc.
-}
+                  if (detalles.next?.estado_especial === "revision") {
+                    usuarioEstado = "REVISIÓN";
+                  } else if (detalles.next?.estado_especial === "baja") {
+                    usuarioEstado = "BAJA";
+                  } else if (detalles.next?.estado_especial === "disponible") {
+                    usuarioEstado = "DISPONIBLE";
+                  } else if (detalles.next?.usuarioId && detalles.prev?.usuarioId !== detalles.next?.usuarioId) {
+                    const usuarioId = detalles.next.usuarioId;
+                    const usuarioInfo = usuariosInfo.find((u) => u.usuarioId === usuarioId);
+                    usuarioEstado = usuarioInfo ? `${usuarioInfo.nombres} ${usuarioInfo.apellidos}` : `Usuario ${usuarioId}`;
+                  } else if (!detalles.next?.usuarioId && detalles.prev?.usuarioId) {
+                    usuarioEstado = "SIN USUARIO";
+                  } else if (detalles.next?.estado_especial) {
+                    usuarioEstado = detalles.next.estado_especial.toUpperCase();
+                  } else if (detalles.prev?.estado_especial) {
+                    usuarioEstado = detalles.prev.estado_especial.toUpperCase();
+                  } else {
+                    usuarioEstado = situacion.toUpperCase();
+                  }
                 } catch (parseError) {
-                  console.error(
-                    "Error parseando detalles de impresora:",
-                    parseError
-                  );
                   accionTexto = "Información de cambio";
                 }
               }
 
               // Estado Técnico con color
-              const estadoColor =
-                ReporteController.getColorPorEstado(estadoTecnico);
+              const estadoColor = ReporteController.getColorPorEstado(estadoTecnico);
               doc
                 .fillColor(estadoColor)
                 .fontSize(7)
                 .font("Helvetica-Bold")
-                .text(estadoTecnico.toUpperCase(), 100, yPosition, {
-                  width: 90,
-                });
+                .text(estadoTecnico.toUpperCase(), 100, yPosition, { width: 90 });
 
               // Usuario/Estado
               doc
@@ -1238,9 +1345,9 @@ if (detalles.next?.estado_especial === "revision") {
                 .fontSize(6)
                 .font("Helvetica")
                 .text(accionTexto, 350, yPosition, { width: 120 });
+
               // Situación con color
-              const situacionColor =
-                ReporteController.getColorPorSituacion(situacion);
+              const situacionColor = ReporteController.getColorPorSituacion(situacion);
               doc
                 .fillColor(situacionColor)
                 .fontSize(7)
@@ -1259,48 +1366,7 @@ if (detalles.next?.estado_especial === "revision") {
                   .stroke();
               }
             } catch (error) {
-              console.error(
-                "Error crítico procesando registro de historial:",
-                error
-              );
-
-              // Manejo de error MEJORADO
-              const fecha = new Date(registro.createdAt).toLocaleDateString(
-                "es-PE"
-              );
-
-              doc
-                .fillColor("#374151")
-                .fontSize(7)
-                .font("Helvetica")
-                .text(fecha, 50, yPosition, { width: 45 });
-
-              doc
-                .fillColor("#dc2626")
-                .fontSize(7)
-                .font("Helvetica-Bold")
-                .text("ERROR", 100, yPosition, { width: 90 });
-
-              doc
-                .fillColor("#6b7280")
-                .fontSize(7)
-                .font("Helvetica")
-                .text("Datos corruptos", 200, yPosition, { width: 140 });
-
-              doc
-                .fillColor("#6b7280")
-                .fontSize(6)
-                .font("Helvetica")
-                .text("Registro con formato incorrecto", 350, yPosition, {
-                  width: 120,
-                });
-
-              doc
-                .fillColor("#6b7280")
-                .fontSize(7)
-                .font("Helvetica")
-                .text("N/A", 480, yPosition, { width: 60 });
-
+              console.error("Error crítico procesando registro de historial:", error);
               yPosition += 20;
             }
           });
@@ -1492,11 +1558,10 @@ if (detalles.next?.estado_especial === "revision") {
         const infoImpresora = [
           ["Código Patrimonial:", impresoraData.codigoPatrimonial || "N/A"],
           ["Modelo:", impresoraData.modelo || "N/A"],
-          ["IP:", impresoraData.ip || "N/A"],
+          ["IP:", impresoraData.ip ||"N/A"],
           ["MAC:", impresoraData.mac || "N/A"],
           ["Oficina:", impresoraData.oficina || "N/A"],
           ["Estado Técnico:", impresoraData.estado || "N/A"],
-          // ["Estado Especial:", impresoraData.estado_especial || "N/A"],
           [
             "Usuario Actual:",
             impresoraData.usuario_id
@@ -1610,78 +1675,73 @@ if (detalles.next?.estado_especial === "revision") {
                 .font("Helvetica")
                 .text(fecha, 50, yPosition, { width: 45 });
 
-            // Estado Técnico y Situación - VERSIÓN MEJORADA CON DEBUG
-let estadoTecnico = impresoraData.estado || "N/A";
-let situacion = impresoraData.estado_especial || "N/A";
-let usuarioEstado = "Sin cambios";
-let accionTexto = registro.accion;
+              // Estado Técnico y Situación - VERSIÓN MEJORADA CON DEBUG
+              let estadoTecnico = impresoraData.estado || "N/A";
+              let situacion = impresoraData.estado_especial || "N/A";
+              let usuarioEstado = "Sin cambios";
+              let accionTexto = registro.accion;
 
-if (registro.detalles) {
-  try {
-    const detalles = JSON.parse(registro.detalles);
-    
-    // DEBUG - Solo para revisiones para no saturar
-    if (registro.accion === 'revision') {
-      console.log('🔍 DEBUG REVISIÓN - Detalles:', detalles);
-    }
-    
-    // Estado Técnico - BUSCAR MÁS EXHAUSTIVAMENTE
-    if (detalles.next && detalles.next.estado && detalles.next.estado !== "N/A") {
-      estadoTecnico = detalles.next.estado;
-    } else if (detalles.prev && detalles.prev.estado && detalles.prev.estado !== "N/A") {
-      estadoTecnico = detalles.prev.estado;
-    }
-    
-    // Situación
-    if (detalles.next && detalles.next.estado_especial) {
-      situacion = detalles.next.estado_especial;
-    } else if (detalles.prev && detalles.prev.estado_especial) {
-      situacion = detalles.prev.estado_especial;
-    }
+              if (registro.detalles) {
+                try {
+                  const detalles = JSON.parse(registro.detalles);
+                  
+                  // Estado Técnico - BUSCAR MÁS EXHAUSTIVAMENTE
+                  if (detalles.next && detalles.next.estado && detalles.next.estado !== "N/A") {
+                    estadoTecnico = detalles.next.estado;
+                  } else if (detalles.prev && detalles.prev.estado && detalles.prev.estado !== "N/A") {
+                    estadoTecnico = detalles.prev.estado;
+                  }
+                  
+                  // Situación
+                  if (detalles.next && detalles.next.estado_especial) {
+                    situacion = detalles.next.estado_especial;
+                  } else if (detalles.prev && detalles.prev.estado_especial) {
+                    situacion = detalles.prev.estado_especial;
+                  }
 
-    // Usuario/Estado - VERSIÓN CORREGIDA
-    if (detalles.next?.estado_especial === "revision") {
-      usuarioEstado = "REVISIÓN";
-    } else if (detalles.next?.estado_especial === "baja") {
-      usuarioEstado = "BAJA";
-    } else if (detalles.next?.estado_especial === "disponible") {
-      usuarioEstado = "DISPONIBLE";
-    } else if (
-      detalles.next?.usuarioId &&
-      detalles.prev?.usuarioId !== detalles.next?.usuarioId
-    ) {
-      const usuarioId = detalles.next.usuarioId;
-      const usuarioInfo = usuariosInfo.find(
-        (u) => u.usuarioId === usuarioId
-      );
-      usuarioEstado = usuarioInfo
-        ? `${usuarioInfo.nombres} ${usuarioInfo.apellidos}`
-        : `Usuario ${usuarioId}`;
-    } else if (
-      !detalles.next?.usuarioId &&
-      detalles.prev?.usuarioId
-    ) {
-      usuarioEstado = "SIN USUARIO";
-    } else if (detalles.next?.estado_especial) {
-      usuarioEstado = detalles.next.estado_especial.toUpperCase();
-    } else {
-      usuarioEstado = "SIN CAMBIOS";
-    }
+                  // Usuario/Estado - VERSIÓN CORREGIDA
+                  if (detalles.next?.estado_especial === "revision") {
+                    usuarioEstado = "REVISIÓN";
+                  } else if (detalles.next?.estado_especial === "baja") {
+                    usuarioEstado = "BAJA";
+                  } else if (detalles.next?.estado_especial === "disponible") {
+                    usuarioEstado = "DISPONIBLE";
+                  } else if (
+                    detalles.next?.usuarioId &&
+                    detalles.prev?.usuarioId !== detalles.next?.usuarioId
+                  ) {
+                    const usuarioId = detalles.next.usuarioId;
+                    const usuarioInfo = usuariosInfo.find(
+                      (u) => u.usuarioId === usuarioId
+                    );
+                    usuarioEstado = usuarioInfo
+                      ? `${usuarioInfo.nombres} ${usuarioInfo.apellidos}`
+                      : `Usuario ${usuarioId}`;
+                  } else if (
+                    !detalles.next?.usuarioId &&
+                    detalles.prev?.usuarioId
+                  ) {
+                    usuarioEstado = "SIN USUARIO";
+                  } else if (detalles.next?.estado_especial) {
+                    usuarioEstado = detalles.next.estado_especial.toUpperCase();
+                  } else {
+                    usuarioEstado = "SIN CAMBIOS";
+                  }
 
-    // Mejorar texto de acción
-    if (detalles.nota) {
-      accionTexto = detalles.nota;
-    } else if (detalles.motivo) {
-      accionTexto = detalles.motivo;
-    }
-  } catch (parseError) {
-    console.error(
-      "Error parseando detalles de impresora:",
-      parseError
-    );
-    accionTexto = "Información de cambio";
-  }
-}
+                  // Mejorar texto de acción
+                  if (detalles.nota) {
+                    accionTexto = detalles.nota;
+                  } else if (detalles.motivo) {
+                    accionTexto = detalles.motivo;
+                  }
+                } catch (parseError) {
+                  console.error(
+                    "Error parseando detalles de impresora:",
+                    parseError
+                  );
+                  accionTexto = "Información de cambio";
+                }
+              }
 
               // Estado Técnico con color
               const estadoColor =
