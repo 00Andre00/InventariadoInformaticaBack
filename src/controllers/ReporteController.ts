@@ -925,6 +925,350 @@ export class ReporteController {
     return colores[estado?.toLowerCase()] || "#374151";
   }
 
+// REPORTE GENERAL DE USUARIOS - VERSIÓN CORREGIDA
+static async generarReporteGeneralUsuarios(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    console.log("Generando reporte general de usuarios - VERSIÓN CORREGIDA");
+
+    // 1. Obtener todos los usuarios
+    const [usuarios] = await db.promise().query<RowDataPacket[]>(
+      `SELECT * FROM usuarios 
+       ORDER BY oficina, apellidos, nombres`
+    );
+
+    // 2. Obtener equipos asignados a todos los usuarios
+    const [equiposAsignados] = await db.promise().query<RowDataPacket[]>(
+      `SELECT e.*, u.id as usuario_id, u.nombres, u.apellidos, u.oficina
+       FROM equipos e
+       INNER JOIN usuarios u ON e.usuarioId = u.id
+       WHERE e.estado_especial = 'asignado'
+       ORDER BY u.id, e.tipo`
+    );
+
+    // 3. Obtener impresoras asignadas a todos los usuarios
+    const [impresorasAsignadas] = await db.promise().query<RowDataPacket[]>(
+      `SELECT i.*, u.id as usuario_id, u.nombres, u.apellidos, u.oficina
+       FROM impresoras i
+       INNER JOIN usuarios u ON i.usuarioId = u.id
+       WHERE i.estado_especial = 'asignado'
+       ORDER BY u.id`
+    );
+
+    console.log(`Usuarios encontrados: ${usuarios.length}`);
+    console.log(`Equipos asignados: ${equiposAsignados.length}`);
+    console.log(`Impresoras asignadas: ${impresorasAsignadas.length}`);
+
+    // Crear PDF
+    const doc = new PDFDocument({
+      margin: 50,
+      bufferPages: true,
+    });
+
+    // Configurar headers
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=reporte-usuarios-${new Date().toISOString().split('T')[0]}.pdf`
+    );
+
+    doc.pipe(res);
+
+    // FUNCIÓN PARA AGREGAR HEADER
+    const agregarHeader = (doc: PDFKit.PDFDocument, yStart: number = 50): number => {
+      doc
+        .fillColor("#1f2937")
+        .fontSize(16)
+        .font("Helvetica-Bold")
+        .text("SISTEMA DE INVENTARIO - REPORTE GENERAL DE USUARIOS", 50, yStart);
+
+      doc
+        .fillColor("#6b7280")
+        .fontSize(10)
+        .font("Helvetica")
+        .text(`Generado: ${new Date().toLocaleString("es-PE")}`, 50, yStart + 25);
+
+      // LÍNEA SEPARADORA DEL HEADER (se mantiene)
+      doc
+        .moveTo(50, yStart + 40)
+        .lineTo(550, yStart + 40)
+        .strokeColor("#e5e7eb")
+        .lineWidth(1)
+        .stroke();
+
+      return yStart + 60;
+    };
+
+    // Agregar header inicial
+    let yPosition = agregarHeader(doc, 50);
+
+    // Agrupar por oficina
+    interface UsuarioConActivos {
+      id: number;
+      nombres: string;
+      apellidos: string;
+      dni: string;
+      oficina: string;
+      tipoContrato: string;
+      equipos: RowDataPacket[];
+      impresoras: RowDataPacket[];
+      totalActivos: number;
+    }
+
+    const usuariosConActivos: UsuarioConActivos[] = usuarios.map((usuario: any) => {
+      const equiposUsuario = equiposAsignados.filter((e: any) => e.usuario_id === usuario.id);
+      const impresorasUsuario = impresorasAsignadas.filter((i: any) => i.usuario_id === usuario.id);
+      
+      return {
+        id: usuario.id,
+        nombres: usuario.nombres,
+        apellidos: usuario.apellidos,
+        dni: usuario.dni,
+        oficina: usuario.oficina,
+        tipoContrato: usuario.tipoContrato,
+        equipos: equiposUsuario,
+        impresoras: impresorasUsuario,
+        totalActivos: equiposUsuario.length + impresorasUsuario.length
+      };
+    });
+
+    // Agrupar usuarios por oficina
+    const usuariosPorOficina: { [oficina: string]: UsuarioConActivos[] } = {};
+    usuariosConActivos.forEach(usuario => {
+      if (!usuariosPorOficina[usuario.oficina]) {
+        usuariosPorOficina[usuario.oficina] = [];
+      }
+      usuariosPorOficina[usuario.oficina].push(usuario);
+    });
+
+    // Obtener las claves de las oficinas para verificar el último elemento
+    const oficinasKeys = Object.keys(usuariosPorOficina);
+
+    // GENERAR CONTENIDO
+    for (const [indexOficina, oficina] of oficinasKeys.entries()) {
+      const usuariosOficina = usuariosPorOficina[oficina];
+
+      // Verificar si necesitamos nueva página para la oficina
+      if (yPosition > 700) {
+        doc.addPage();
+        yPosition = agregarHeader(doc, 50);
+      }
+
+      // TÍTULO DE OFICINA
+      doc
+        .fillColor("#374151")
+        .fontSize(12)
+        .font("Helvetica-Bold")
+        .text(`OFICINA: ${oficina}`, 50, yPosition);
+
+      yPosition += 25;
+
+      // USUARIOS DE LA OFICINA
+      for (const [indexUsuario, usuario] of usuariosOficina.entries()) {
+        // Verificar espacio para el usuario completo
+        const espacioUsuario = 50 + (Math.max(usuario.equipos.length, usuario.impresoras.length) * 12);
+        if (yPosition + espacioUsuario > 750) {
+          doc.addPage();
+          yPosition = agregarHeader(doc, 50);
+        }
+
+        // INFORMACIÓN DEL USUARIO
+        doc
+          .fillColor("#1f2937")
+          .fontSize(11)
+          .font("Helvetica-Bold")
+          .text(`${usuario.nombres} ${usuario.apellidos}`, 50, yPosition);
+
+        doc
+          .fillColor("#6b7280")
+          .fontSize(9)
+          .font("Helvetica")
+          .text(`DNI: ${usuario.dni} | Contrato: ${usuario.tipoContrato} | Activos: ${usuario.totalActivos}`, 50, yPosition + 15);
+
+        yPosition += 30;
+
+        // TABLA DE EQUIPOS (sin líneas de separación internas)
+        if (usuario.equipos.length > 0) {
+          doc
+            .fillColor("#1f2937")
+            .fontSize(9)
+            .font("Helvetica-Bold")
+            .text("EQUIPOS ASIGNADOS:", 60, yPosition);
+
+          yPosition += 15;
+
+          // Header de la tabla (sin línea separadora)
+          doc
+            .fillColor("#1f2937")
+            .fontSize(8)
+            .font("Helvetica-Bold")
+            .text("COD. PAT.", 60, yPosition)
+            .text("EQUIPO", 120, yPosition)
+            .text("ESPECIFICACIONES", 250, yPosition)
+            .text("ESTADO", 450, yPosition);
+
+          yPosition += 12;
+
+          // Filas de equipos (sin líneas separadoras)
+          usuario.equipos.forEach((equipo: any) => {
+            if (yPosition > 730) {
+              doc.addPage();
+              yPosition = agregarHeader(doc, 50);
+            }
+
+            // Código patrimonial
+            doc
+              .fillColor("#374151")
+              .fontSize(7)
+              .font("Helvetica")
+              .text(equipo.codigoPatrimonial || "Sin código", 60, yPosition, { width: 55 });
+
+            // Equipo
+            const textoEquipo = `${equipo.tipo} ${equipo.marca} ${equipo.modelo}`.trim();
+            doc
+              .fillColor("#374151")
+              .fontSize(7)
+              .font("Helvetica")
+              .text(textoEquipo, 120, yPosition, { width: 125 });
+
+            // Especificaciones
+            const especificaciones = `${equipo.procesador || ''} | ${equipo.ram || ''} | ${equipo.almacenamiento || ''}`.replace(/\s*\|\s*\|\s*/g, '|').replace(/^\||\|$/g, '');
+            doc
+              .fillColor("#6b7280")
+              .fontSize(6)
+              .font("Helvetica")
+              .text(especificaciones || "N/A", 250, yPosition, { width: 195 });
+
+            // Estado con color
+            const estadoColor = ReporteController.getColorPorEstado(equipo.estado);
+            doc
+              .fillColor(estadoColor)
+              .fontSize(7)
+              .font("Helvetica-Bold")
+              .text(equipo.estado?.toUpperCase() || "ACTIVO", 450, yPosition, { width: 60 });
+
+            yPosition += 10;
+          });
+
+          yPosition += 8;
+        }
+
+        // TABLA DE IMPRESORAS (sin líneas de separación internas)
+        if (usuario.impresoras.length > 0) {
+          doc
+            .fillColor("#1f2937")
+            .fontSize(9)
+            .font("Helvetica-Bold")
+            .text("IMPRESORAS ASIGNADAS:", 60, yPosition);
+
+          yPosition += 15;
+
+          // Header de la tabla (sin línea separadora)
+          doc
+            .fillColor("#1f2937")
+            .fontSize(8)
+            .font("Helvetica-Bold")
+            .text("COD. PAT.", 60, yPosition)
+            .text("MODELO", 120, yPosition)
+            .text("CONECTIVIDAD", 250, yPosition)
+            .text("ESTADO", 450, yPosition);
+
+          yPosition += 12;
+
+          // Filas de impresoras (sin líneas separadoras)
+          usuario.impresoras.forEach((impresora: any) => {
+            if (yPosition > 730) {
+              doc.addPage();
+              yPosition = agregarHeader(doc, 50);
+            }
+
+            // Código patrimonial
+            doc
+              .fillColor("#374151")
+              .fontSize(7)
+              .font("Helvetica")
+              .text(impresora.codigoPatrimonial || "Sin código", 60, yPosition, { width: 55 });
+
+            // Modelo
+            doc
+              .fillColor("#374151")
+              .fontSize(7)
+              .font("Helvetica")
+              .text(impresora.modelo, 120, yPosition, { width: 125 });
+
+            // Conectividad
+            const conectividad = `${impresora.ip || 'Sin IP'} | ${impresora.mac || 'Sin MAC'}`;
+            doc
+              .fillColor("#6b7280")
+              .fontSize(6)
+              .font("Helvetica")
+              .text(conectividad, 250, yPosition, { width: 195 });
+
+            // Estado con color
+            const estadoColor = ReporteController.getColorPorEstado(impresora.estado);
+            doc
+              .fillColor(estadoColor)
+              .fontSize(7)
+              .font("Helvetica-Bold")
+              .text(impresora.estado?.toUpperCase() || "ACTIVA", 450, yPosition, { width: 60 });
+
+            yPosition += 10;
+          });
+
+          yPosition += 8;
+        }
+
+        // USUARIO SIN ACTIVOS
+        if (usuario.totalActivos === 0) {
+          doc
+            .fillColor("#dc2626")
+            .fontSize(9)
+            .font("Helvetica-Bold")
+            .text("• SIN EQUIPOS NI IMPRESORAS ASIGNADAS", 60, yPosition);
+          
+          yPosition += 20;
+        }
+
+        // LÍNEA SEPARADORA ENTRE USUARIOS - CORREGIDA
+        // Dibujar línea después de CADA usuario excepto el último usuario de la última oficina
+        const esUltimoUsuario = indexUsuario === usuariosOficina.length - 1;
+        const esUltimaOficina = indexOficina === oficinasKeys.length - 1;
+        
+        if (!(esUltimoUsuario && esUltimaOficina)) {
+          doc
+            .moveTo(50, yPosition)
+            .lineTo(550, yPosition)
+            .strokeColor("#f3f4f6")
+            .lineWidth(1)
+            .stroke();
+
+          yPosition += 15;
+        }
+      }
+
+      // Espacio entre oficinas
+      yPosition += 10;
+    }
+
+    console.log("PDF de reporte general de usuarios generado exitosamente");
+    doc.end();
+
+  } catch (err: any) {
+    console.error("Error al generar reporte general de usuarios:", err);
+
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: "Error al generar reporte general de usuarios",
+        details: err?.message || "Error desconocido",
+      });
+    }
+  }
+}
+
+
+
   static async generarReporteEquipo(
     req: Request,
     res: Response
