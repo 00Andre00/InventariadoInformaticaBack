@@ -605,174 +605,227 @@ export class ReporteController {
     doc.moveTo(50, y).lineTo(550, y).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
   }
 
-  // NUEVO REPORTE GENERAL DE EQUIPOS - VERSIÓN CON MÁS ANCHO PARA IP Y MAC
-  static async generarReporteGeneralEquipos(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    try {
-      console.log("Generando reporte general de equipos");
+// REPORTE GENERAL DE EQUIPOS - VERSIÓN CON AJUSTES DE ANCHOS
+static async generarReporteGeneralEquipos(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    console.log("Generando reporte general de equipos CON AJUSTES DE ANCHOS");
 
-      // Obtener todos los equipos con información de usuario
-      const [equipos] = await db.promise().query<RowDataPacket[]>(
-        `SELECT e.*, 
-                u.nombres as usuario_nombres, 
-                u.apellidos as usuario_apellidos,
-                u.dni as usuario_dni,
-                u.oficina as usuario_oficina
-         FROM equipos e
-         LEFT JOIN usuarios u ON e.usuarioId = u.id
-         ORDER BY e.estado_especial, e.oficina, e.tipo`
-      );
+    const [equipos] = await db.promise().query<RowDataPacket[]>(
+      `SELECT e.*, 
+              u.nombres as usuario_nombres, 
+              u.apellidos as usuario_apellidos,
+              u.dni as usuario_dni,
+              u.oficina as usuario_oficina
+       FROM equipos e
+       LEFT JOIN usuarios u ON e.usuarioId = u.id
+       ORDER BY e.estado_especial, e.oficina, e.tipo`
+    );
 
-      console.log(`Equipos encontrados: ${equipos.length}`);
+    console.log(`Equipos encontrados: ${equipos.length}`);
 
-      // Crear PDF
-      const doc = new PDFDocument({
-        margin: 50,
-        bufferPages: true,
-        size: 'A4',
-        layout: 'landscape'
+    const doc = new PDFDocument({
+      margin: 50,
+      bufferPages: true,
+      size: 'A4',
+      layout: 'landscape'
+    });
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=reporte-general-equipos-${new Date().toISOString().split('T')[0]}.pdf`
+    );
+
+    doc.pipe(res);
+
+    // Header
+    doc
+      .fillColor("#1f2937")
+      .fontSize(18)
+      .font("Helvetica-Bold")
+      .text("SISTEMA DE INVENTARIO - REPORTE GENERAL DE EQUIPOS", 50, 50);
+
+    doc
+      .fillColor("#6b7280")
+      .fontSize(10)
+      .font("Helvetica")
+      .text(`Generado: ${new Date().toLocaleString("es-PE")}`, 50, 75)
+      .text(`Total de equipos: ${equipos.length}`, 50, 90);
+
+    doc
+      .moveTo(50, 110)
+      .lineTo(780, 110)
+      .strokeColor("#e5e7eb")
+      .lineWidth(1)
+      .stroke();
+
+    let yPosition = 130;
+
+    if (equipos.length > 0) {
+      // DEFINIR POSICIONES Y ANCHOS CON AJUSTES
+      const columnas = {
+        codPat: { x: 50, width: 55 },
+        equipo: { x: 110, width: 75 }, // REDUCIDO: 90px → 75px
+        ip: { x: 190, width: 70 },     // Ajustada posición
+        mac: { x: 265, width: 85 },    // Ajustada posición
+        usuario: { x: 355, width: 80 }, // REDUCIDO: 90px → 80px
+        oficina: { x: 440, width: 70 }, // Ajustada posición
+        situacion: { x: 515, width: 55 }, // Ajustada posición
+        monitor: { x: 575, width: 70 }, // REDUCIDO: 80px → 70px
+        codMonitor: { x: 650, width: 60 },
+        estadoMonitor: { x: 715, width: 70 } // AUMENTADO: 60px → 70px
+      };
+
+      // Calcular el fin de la línea (mismo tamaño que la línea del header principal)
+      const finLinea = 780; // Mismo que la línea del header principal
+
+      // HEADER CON NUEVOS ANCHOS
+      const dibujarHeader = (y: number) => {
+        doc.fillColor("#1f2937").fontSize(7).font("Helvetica-Bold")
+           .text("COD. PAT.", columnas.codPat.x, y, { width: columnas.codPat.width })
+           .text("EQUIPO", columnas.equipo.x, y, { width: columnas.equipo.width })
+           .text("IP", columnas.ip.x, y, { width: columnas.ip.width })
+           .text("MAC", columnas.mac.x, y, { width: columnas.mac.width })
+           .text("USUARIO", columnas.usuario.x, y, { width: columnas.usuario.width })
+           .text("OFICINA", columnas.oficina.x, y, { width: columnas.oficina.width })
+           .text("SITUACIÓN", columnas.situacion.x, y, { width: columnas.situacion.width })
+           .text("MONITOR", columnas.monitor.x, y, { width: columnas.monitor.width })
+           .text("COD. MONITOR", columnas.codMonitor.x, y, { width: columnas.codMonitor.width })
+           .text("EST. MONITOR", columnas.estadoMonitor.x, y, { width: columnas.estadoMonitor.width });
+
+        y += 12;
+        // LÍNEA DEL MISMO TAMAÑO QUE EL HEADER PRINCIPAL
+        doc.moveTo(50, y).lineTo(finLinea, y).strokeColor("#e5e7eb").lineWidth(0.8).stroke();
+        
+        return y + 15;
+      };
+
+      // Header inicial
+      yPosition = dibujarHeader(yPosition);
+
+      equipos.forEach((equipo, index) => {
+        if (yPosition > 700) {
+          doc.addPage();
+          yPosition = 50;
+          yPosition = dibujarHeader(yPosition);
+        }
+
+        doc.fillColor("#374151").fontSize(7).font("Helvetica");
+
+        // Código Patrimonial del EQUIPO
+        doc.text(equipo.codigoPatrimonial || "Sin código", columnas.codPat.x, yPosition, { 
+          width: columnas.codPat.width 
+        });
+
+        // Equipo - MÁS COMPACTO
+        const textoEquipo = `${equipo.tipo || ''} ${equipo.marca || ''}`.trim();
+        doc.text(textoEquipo, columnas.equipo.x, yPosition, { 
+          width: columnas.equipo.width 
+        });
+
+        // IP
+        doc.text(equipo.ip || "N/A", columnas.ip.x, yPosition, { 
+          width: columnas.ip.width 
+        });
+
+        // MAC
+        doc.text(equipo.mac || "N/A", columnas.mac.x, yPosition, { 
+          width: columnas.mac.width 
+        });
+
+        // Usuario - MÁS COMPACTO
+        let usuarioTexto = "";
+        if (equipo.usuario_nombres && equipo.usuario_apellidos) {
+          const primerNombre = equipo.usuario_nombres.split(' ')[0];
+          const primerApellido = equipo.usuario_apellidos.split(' ')[0];
+          // Si es muy largo, usar formato más compacto
+          if ((primerNombre + primerApellido).length > 12) {
+            usuarioTexto = `${primerNombre.substring(0, 1)}. ${primerApellido}`;
+          } else {
+            usuarioTexto = `${primerNombre} ${primerApellido}`;
+          }
+        } else {
+          usuarioTexto = "S/ASIGNAR";
+        }
+        doc.text(usuarioTexto, columnas.usuario.x, yPosition, { 
+          width: columnas.usuario.width 
+        });
+
+        // Oficina
+        doc.text(equipo.oficina || "N/A", columnas.oficina.x, yPosition, { 
+          width: columnas.oficina.width 
+        });
+
+        // Situación con color
+        const situacion = equipo.estado_especial || "disponible";
+        const situacionColor = ReporteController.getColorPorSituacion(situacion);
+        doc
+          .fillColor(situacionColor)
+          .fontSize(7)
+          .font("Helvetica-Bold")
+          .text(situacion.toUpperCase(), columnas.situacion.x, yPosition, { 
+            width: columnas.situacion.width 
+          });
+
+        // Resetear color
+        doc.fillColor("#374151").fontSize(7).font("Helvetica");
+
+        // Información del MONITOR - MÁS COMPACTO
+        const textoMonitor = equipo.marcaMonitor 
+          ? `${equipo.marcaMonitor} ${equipo.pulgadasMonitor || ''}"`.trim()
+          : "Sin monitor";
+        doc.text(textoMonitor, columnas.monitor.x, yPosition, { 
+          width: columnas.monitor.width 
+        });
+
+        // Código Patrimonial del MONITOR
+        doc.text(equipo.codigoPatrimonialMonitor || "N/A", columnas.codMonitor.x, yPosition, { 
+          width: columnas.codMonitor.width 
+        });
+
+        // Estado del Monitor con color - MÁS ESPACIO
+        const estadoMonitor = equipo.estadoMonitor || "N/A";
+        const estadoMonitorColor = ReporteController.getColorPorEstado(estadoMonitor);
+        doc
+          .fillColor(estadoMonitorColor)
+          .fontSize(7)
+          .font("Helvetica-Bold")
+          .text(estadoMonitor.toUpperCase(), columnas.estadoMonitor.x, yPosition, { 
+            width: columnas.estadoMonitor.width 
+          });
+
+        yPosition += 22;
+
+        // Línea separadora sutil - MISMO TAMAÑO QUE HEADER
+        if (index < equipos.length - 1) {
+          doc.moveTo(50, yPosition - 5).lineTo(finLinea, yPosition - 5)
+             .strokeColor("#f3f4f6").lineWidth(0.3).stroke();
+        }
       });
-
-      // Configurar headers
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename=reporte-general-equipos-${new Date().toISOString().split('T')[0]}.pdf`
-      );
-
-      doc.pipe(res);
-
-      // Header
-      doc
-        .fillColor("#1f2937")
-        .fontSize(18)
-        .font("Helvetica-Bold")
-        .text("SISTEMA DE INVENTARIO - REPORTE GENERAL DE EQUIPOS", 50, 50);
-
+    } else {
       doc
         .fillColor("#6b7280")
-        .fontSize(10)
+        .fontSize(12)
         .font("Helvetica")
-        .text(`Generado: ${new Date().toLocaleString("es-PE")}`, 50, 75)
-        .text(`Total de equipos: ${equipos.length}`, 50, 90);
+        .text("No se encontraron equipos en el sistema.", 50, yPosition);
+    }
 
-      // Línea separadora
-      doc
-        .moveTo(50, 110)
-        .lineTo(780, 110)
-        .strokeColor("#e5e7eb")
-        .lineWidth(1)
-        .stroke();
+    console.log("PDF de reporte general CON AJUSTES DE ANCHOS generado exitosamente");
+    doc.end();
+  } catch (err: any) {
+    console.error("Error al generar reporte general de equipos:", err);
 
-      let yPosition = 130;
-
-      // Tabla de equipos - CON ANCHOS MEJORADOS
-      if (equipos.length > 0) {
-        // Header de la tabla con nuevos anchos
-        doc.fillColor("#1f2937").fontSize(8).font("Helvetica-Bold")
-           .text("COD. PAT.", 50, yPosition, { width: 45 })
-           .text("EQUIPO", 100, yPosition, { width: 80 })
-           .text("IP", 185, yPosition, { width: 70 })
-           .text("MAC", 260, yPosition, { width: 90 })
-           .text("USUARIO/ESTADO", 355, yPosition, { width: 130 })
-           .text("OFICINA", 490, yPosition, { width: 65 })
-           .text("SITUACIÓN", 560, yPosition, { width: 50 });
-
-        yPosition += 10;
-        doc.moveTo(50, yPosition).lineTo(615, yPosition).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
-        yPosition += 20;
-
-        // Filas de equipos con nuevos anchos
-        equipos.forEach((equipo, index) => {
-          // Verificar si necesita nueva página
-          if (yPosition > 700) {
-            doc.addPage();
-            yPosition = 50;
-            
-            // Header de la tabla en nueva página con nuevos anchos
-            doc.fillColor("#1f2937").fontSize(8).font("Helvetica-Bold")
-               .text("COD. PAT.", 50, yPosition, { width: 45 })
-               .text("EQUIPO", 100, yPosition, { width: 80 })
-               .text("IP", 185, yPosition, { width: 70 })
-               .text("MAC", 260, yPosition, { width: 90 })
-               .text("USUARIO/ESTADO", 355, yPosition, { width: 130 })
-               .text("OFICINA", 490, yPosition, { width: 65 })
-               .text("SITUACIÓN", 560, yPosition, { width: 50 });
-
-            yPosition += 10;
-            doc.moveTo(50, yPosition).lineTo(615, yPosition).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
-            yPosition += 20;
-          }
-
-          // Código Patrimonial
-          doc
-            .fillColor("#374151")
-            .fontSize(7)
-            .font("Helvetica")
-            .text(equipo.codigoPatrimonial || "Sin código", 50,yPosition, { width: 45 });
-
-          // Equipo (Tipo + Marca + Modelo) - con nuevo ancho
-          const textoEquipo = `${equipo.tipo || ''} ${equipo.marca || ''} ${equipo.modelo || ''}`.trim();
-          doc.text(textoEquipo, 100, yPosition, { width: 80 });
-
-          // IP - CON MÁS ANCHO (70px)
-          doc.text(equipo.ip || "N/A", 185, yPosition, { width: 70 });
-
-          // MAC - CON MÁS ANCHO (90px)
-          doc.text(equipo.mac || "N/A", 260, yPosition, { width: 90 });
-
-          // Usuario/Estado - con nuevo ancho
-          let usuarioEstado = "";
-          if (equipo.usuario_nombres && equipo.usuario_apellidos) {
-            usuarioEstado = `${equipo.usuario_nombres} ${equipo.usuario_apellidos}`;
-          } else {
-            usuarioEstado = equipo.estado_especial ? equipo.estado_especial.toUpperCase() : "DISPONIBLE";
-          }
-          doc.text(usuarioEstado, 355, yPosition, { width: 130 });
-
-          // Oficina
-          doc.text(equipo.oficina || "N/A", 490, yPosition, { width: 65 });
-
-          // Situación con color
-          const situacion = equipo.estado_especial || "disponible";
-          const situacionColor = ReporteController.getColorPorSituacion(situacion);
-          doc
-            .fillColor(situacionColor)
-            .fontSize(7)
-            .font("Helvetica-Bold")
-            .text(situacion.toUpperCase(), 560, yPosition, { width: 50 });
-
-          yPosition += 20;
-
-          // Línea separadora entre filas ajustada
-          if (index < equipos.length - 1) {
-            doc.moveTo(50, yPosition - 5).lineTo(615, yPosition - 5)
-               .strokeColor("#f3f4f6").lineWidth(0.3).stroke();
-          }
-        });
-      } else {
-        doc
-          .fillColor("#6b7280")
-          .fontSize(12)
-          .font("Helvetica")
-          .text("No se encontraron equipos en el sistema.", 50, yPosition);
-      }
-
-      console.log("PDF de reporte general generado exitosamente");
-      doc.end();
-    } catch (err: any) {
-      console.error("Error al generar reporte general de equipos:", err);
-
-      if (!res.headersSent) {
-        res.status(500).json({
-          error: "Error al generar reporte general de equipos",
-          details: err?.message || "Error desconocido",
-        });
-      }
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: "Error al generar reporte general de equipos",
+        details: err?.message || "Error desconocido",
+      });
     }
   }
+}
 
   private static agregarTablaGeneralEquipos(
     doc: PDFKit.PDFDocument,
@@ -1435,222 +1488,260 @@ static async generarReporteGeneralImpresoras(
   }
 }
 
-  static async generarReporteEquipo(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    const { id } = req.params;
+
+static async generarReporteEquipo(
+  req: Request,
+  res: Response
+): Promise<void> {
+  const { id } = req.params;
+
+  try {
+    console.log(`Generando reporte para equipo ID: ${id}`);
+
+    // Consulta SQL CORREGIDA - sin JOIN con monitores
+    const [equipo] = await db.promise().query<RowDataPacket[]>(
+      `SELECT e.*, 
+          u.id as usuario_id, u.dni, u.nombres, u.apellidos, u.tipoContrato
+       FROM equipos e
+       LEFT JOIN usuarios u ON e.usuarioId = u.id
+       WHERE e.id = ?`,
+      [id]
+    );
+
+    if (equipo.length === 0) {
+      console.log("Equipo no encontrado");
+      res.status(404).json({ error: "Equipo no encontrado" });
+      return;
+    }
+
+    const equipoData = equipo[0];
+    console.log(`Equipo encontrado: ${equipoData.marca} ${equipoData.modelo}`);
+
+    // 2. Obtener historial completo del equipo (SIN información de usuarios_sistema)
+    const [historialEquipo] = await db.promise().query<RowDataPacket[]>(
+      `SELECT hc.*
+           FROM historial_cambios hc
+           WHERE hc.tipo_activo = 'equipo' AND hc.activo_id = ?
+           ORDER BY hc.createdAt DESC`,
+      [id]
+    );
+
+    console.log(`Historial encontrado: ${historialEquipo.length} registros`);
+
+    // 3. Obtener usuarios que han tenido este equipo (extraer de los detalles del historial)
+    const usuariosHistoricos = new Map();
+
+    historialEquipo.forEach((registro) => {
+      try {
+        const detalles = JSON.parse(registro.detalles);
+
+        // Buscar información del usuario en los detalles
+        if (
+          detalles.next?.usuarioId &&
+          detalles.next.usuarioId !== detalles.prev?.usuarioId
+        ) {
+          const usuarioId = detalles.next.usuarioId;
+          const nombresCompletos =
+            detalles.nota?.match(/Asignado a (.+?)$/)?.[1] ||
+            `Usuario ${usuarioId}`;
+
+          usuariosHistoricos.set(usuarioId, {
+            usuarioId: usuarioId,
+            nombres: nombresCompletos,
+            fechaAsignacion: registro.createdAt,
+            accion: registro.accion,
+          });
+        }
+
+        // También capturar desasignaciones
+        if (detalles.prev?.usuarioId && !detalles.next?.usuarioId) {
+          const usuarioId = detalles.prev.usuarioId;
+          usuariosHistoricos.set(usuarioId, {
+            usuarioId: usuarioId,
+            nombres: `Usuario ${usuarioId}`,
+            fechaAsignacion: registro.createdAt,
+            accion: "desasignacion",
+          });
+        }
+      } catch (error) {
+        console.error("Error al parsear detalles:", error);
+      }
+    });
+
+    // 4. Obtener información completa de los usuarios históricos
+    interface UsuarioHistorico {
+      usuarioId: number;
+      nombres: string;
+      apellidos: string;
+      dni: string;
+      oficina: string;
+      fechaAsignacion: string;
+      accion: string;
+    }
+
+    const usuariosInfo: UsuarioHistorico[] = [];
+    for (const [usuarioId, info] of usuariosHistoricos) {
+      if (info.accion !== "desasignacion") {
+        // Solo los que fueron asignados
+        const [usuario] = await db
+          .promise()
+          .query<RowDataPacket[]>(
+            "SELECT nombres, apellidos, dni, oficina FROM usuarios WHERE id = ?",
+            [usuarioId]
+          );
+        if (usuario.length > 0) {
+          usuariosInfo.push({
+            ...info,
+            nombres: usuario[0].nombres,
+            apellidos: usuario[0].apellidos,
+            dni: usuario[0].dni,
+            oficina: usuario[0].oficina,
+            fechaAsignacion: info.fechaAsignacion,
+          });
+        }
+      }
+    }
+
+    // 5. Obtener estados históricos del equipo (revisión, disponible, etc.)
+    interface EstadoHistorico {
+      fecha: string;
+      accion: string;
+      estadoAnterior?: string;
+      estadoNuevo?: string;
+      nota: string;
+    }
+
+    const estadosHistoricos: EstadoHistorico[] = [];
+    historialEquipo.forEach((registro) => {
+      try {
+        const detalles = JSON.parse(registro.detalles);
+        if (
+          detalles.prev?.estado_especial ||
+          detalles.next?.estado_especial
+        ) {
+          estadosHistoricos.push({
+            fecha: registro.createdAt,
+            accion: registro.accion,
+            estadoAnterior: detalles.prev?.estado_especial,
+            estadoNuevo: detalles.next?.estado_especial,
+            nota: detalles.nota || "Cambio de estado",
+          });
+        }
+      } catch (error) {
+        console.error("Error al procesar estado histórico:", error);
+      }
+    });
+
+    // Crear PDF
+    const doc = new PDFDocument({
+      margin: 50,
+      bufferPages: true,
+    });
+
+    // Configurar headers
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=reporte-equipo-${
+        equipoData.codigoPatrimonial || equipoData.id
+      }.pdf`
+    );
+
+    doc.pipe(res);
 
     try {
-      console.log(`Generando reporte para equipo ID: ${id}`);
+      // Header
+      doc
+        .fillColor("#1f2937")
+        .fontSize(20)
+        .font("Helvetica-Bold")
+        .text("SISTEMA DE INVENTARIO - REPORTE DE EQUIPO", 50, 50);
 
-      // 1. Obtener información del equipo
-      const [equipo] = await db.promise().query<RowDataPacket[]>(
-        `SELECT e.*, 
-                    u.id as usuario_id, u.dni, u.nombres, u.apellidos, u.tipoContrato
-             FROM equipos e
-             LEFT JOIN usuarios u ON e.usuarioId = u.id
-             WHERE e.id = ?`,
-        [id]
-      );
+      doc
+        .fillColor("#6b7280")
+        .fontSize(12)
+        .font("Helvetica")
+        .text(`Generado: ${new Date().toLocaleString("es-PE")}`, 50, 80);
 
-      if (equipo.length === 0) {
-        console.log("Equipo no encontrado");
-        res.status(404).json({ error: "Equipo no encontrado" });
-        return;
-      }
+      // Línea separadora
+      doc
+        .moveTo(50, 100)
+        .lineTo(550, 100)
+        .strokeColor("#e5e7eb")
+        .lineWidth(1)
+        .stroke();
 
-      const equipoData = equipo[0];
-      console.log(
-        `Equipo encontrado: ${equipoData.marca} ${equipoData.modelo}`
-      );
+      let yPosition = 130;
 
-      // 2. Obtener historial completo del equipo (SIN información de usuarios_sistema)
-      const [historialEquipo] = await db.promise().query<RowDataPacket[]>(
-        `SELECT hc.*
-             FROM historial_cambios hc
-             WHERE hc.tipo_activo = 'equipo' AND hc.activo_id = ?
-             ORDER BY hc.createdAt DESC`,
-        [id]
-      );
+      // 1. INFORMACIÓN DEL EQUIPO
+      doc
+        .fillColor("#1f2937")
+        .fontSize(16)
+        .font("Helvetica-Bold")
+        .text("INFORMACIÓN DEL EQUIPO", 50, yPosition);
+      yPosition += 30;
 
-      console.log(`Historial encontrado: ${historialEquipo.length} registros`);
+      const infoEquipo = [
+        ["Código Patrimonial:", equipoData.codigoPatrimonial || "N/A"],
+        ["Tipo:", equipoData.tipo],
+        ["Marca:", equipoData.marca],
+        ["Modelo:", equipoData.modelo],
+        ["Procesador:", equipoData.procesador],
+        ["RAM:", equipoData.ram],
+        ["Almacenamiento:", equipoData.almacenamiento],
+        ["Oficina:", equipoData.oficina],
+        ["IP:", equipoData.ip],
+        ["MAC:", equipoData.mac],
+        ["Sistema Operativo:", equipoData.so || "N/A"],
+        ["Estado del Equipo:", equipoData.estado],
+        [
+          "Usuario Actual:",
+          equipoData.usuario_id
+            ? `${equipoData.nombres} ${equipoData.apellidos} (${equipoData.dni})`
+            : "Sin asignar",
+        ],
+      ];
 
-      // 3. Obtener usuarios que han tenido este equipo (extraer de los detalles del historial)
-      const usuariosHistoricos = new Map();
-
-      historialEquipo.forEach((registro) => {
-        try {
-          const detalles = JSON.parse(registro.detalles);
-
-          // Buscar información del usuario en los detalles
-          if (
-            detalles.next?.usuarioId &&
-            detalles.next.usuarioId !== detalles.prev?.usuarioId
-          ) {
-            const usuarioId = detalles.next.usuarioId;
-            const nombresCompletos =
-              detalles.nota?.match(/Asignado a (.+?)$/)?.[1] ||
-              `Usuario ${usuarioId}`;
-
-            usuariosHistoricos.set(usuarioId, {
-              usuarioId: usuarioId,
-              nombres: nombresCompletos,
-              fechaAsignacion: registro.createdAt,
-              accion: registro.accion,
-            });
-          }
-
-          // También capturar desasignaciones
-          if (detalles.prev?.usuarioId && !detalles.next?.usuarioId) {
-            const usuarioId = detalles.prev.usuarioId;
-            usuariosHistoricos.set(usuarioId, {
-              usuarioId: usuarioId,
-              nombres: `Usuario ${usuarioId}`,
-              fechaAsignacion: registro.createdAt,
-              accion: "desasignacion",
-            });
-          }
-        } catch (error) {
-          console.error("Error al parsear detalles:", error);
-        }
-      });
-
-      // 4. Obtener información completa de los usuarios históricos
-      interface UsuarioHistorico {
-        usuarioId: number;
-        nombres: string;
-        apellidos: string;
-        dni: string;
-        oficina: string;
-        fechaAsignacion: string;
-        accion: string;
-      }
-
-      const usuariosInfo: UsuarioHistorico[] = [];
-      for (const [usuarioId, info] of usuariosHistoricos) {
-        if (info.accion !== "desasignacion") {
-          // Solo los que fueron asignados
-          const [usuario] = await db
-            .promise()
-            .query<RowDataPacket[]>(
-              "SELECT nombres, apellidos, dni, oficina FROM usuarios WHERE id = ?",
-              [usuarioId]
-            );
-          if (usuario.length > 0) {
-            usuariosInfo.push({
-              ...info,
-              nombres: usuario[0].nombres,
-              apellidos: usuario[0].apellidos,
-              dni: usuario[0].dni,
-              oficina: usuario[0].oficina,
-              fechaAsignacion: info.fechaAsignacion,
-            });
-          }
-        }
-      }
-
-      // 5. Obtener estados históricos del equipo (revisión, disponible, etc.)
-      interface EstadoHistorico {
-        fecha: string;
-        accion: string;
-        estadoAnterior?: string;
-        estadoNuevo?: string;
-        nota: string;
-      }
-
-      const estadosHistoricos: EstadoHistorico[] = [];
-      historialEquipo.forEach((registro) => {
-        try {
-          const detalles = JSON.parse(registro.detalles);
-          if (
-            detalles.prev?.estado_especial ||
-            detalles.next?.estado_especial
-          ) {
-            estadosHistoricos.push({
-              fecha: registro.createdAt,
-              accion: registro.accion,
-              estadoAnterior: detalles.prev?.estado_especial,
-              estadoNuevo: detalles.next?.estado_especial,
-              nota: detalles.nota || "Cambio de estado",
-            });
-          }
-        } catch (error) {
-          console.error("Error al procesar estado histórico:", error);
-        }
-      });
-
-      // Crear PDF
-      const doc = new PDFDocument({
-        margin: 50,
-        bufferPages: true,
-      });
-
-      // Configurar headers
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename=reporte-equipo-${
-          equipoData.codigoPatrimonial || equipoData.id
-        }.pdf`
-      );
-
-      doc.pipe(res);
-
-      try {
-        // Header
+      infoEquipo.forEach(([label, value]) => {
         doc
-          .fillColor("#1f2937")
-          .fontSize(20)
+          .fillColor("#374151")
+          .fontSize(10)
           .font("Helvetica-Bold")
-          .text("SISTEMA DE INVENTARIO - REPORTE DE EQUIPO", 50, 50);
+          .text(label, 50, yPosition);
 
         doc
           .fillColor("#6b7280")
-          .fontSize(12)
+          .fontSize(10)
           .font("Helvetica")
-          .text(`Generado: ${new Date().toLocaleString("es-PE")}`, 50, 80);
+          .text(value || "N/A", 180, yPosition);
 
-        // Línea separadora
-        doc
-          .moveTo(50, 100)
-          .lineTo(550, 100)
-          .strokeColor("#e5e7eb")
-          .lineWidth(1)
-          .stroke();
+        yPosition += 15;
+      });
 
-        let yPosition = 130;
+      yPosition += 20;
 
-        // 1. INFORMACIÓN DEL EQUIPO
+      // 2. INFORMACIÓN DEL MONITOR - VERSIÓN CORREGIDA (usando campos de equipos)
+      if (equipoData.marcaMonitor) {
+        if (yPosition > 600) {
+          doc.addPage();
+          yPosition = 50;
+        }
+
         doc
           .fillColor("#1f2937")
           .fontSize(16)
           .font("Helvetica-Bold")
-          .text("INFORMACIÓN DEL EQUIPO", 50, yPosition);
-        yPosition += 30;
+          .text("INFORMACIÓN DEL MONITOR ASOCIADO", 50, yPosition);
+        yPosition += 25;
 
-        const infoEquipo = [
-          ["Código Patrimonial:", equipoData.codigoPatrimonial || "N/A"],
-          ["Tipo:", equipoData.tipo],
-          ["Marca:", equipoData.marca],
-          ["Modelo:", equipoData.modelo],
-          ["Procesador:", equipoData.procesador],
-          ["RAM:", equipoData.ram],
-          ["Almacenamiento:", equipoData.almacenamiento],
-          ["Oficina:", equipoData.oficina],
-          ["IP:", equipoData.ip],
-          ["MAC:", equipoData.mac],
-          ["Sistema Operativo:", equipoData.so || "N/A"],
-          ["Estado del Equipo:", equipoData.estado],
-          [
-            "Usuario Actual:",
-            equipoData.usuario_id
-              ? `${equipoData.nombres} ${equipoData.apellidos} (${equipoData.dni})`
-              : "Sin asignar",
-          ],
+        const infoMonitor = [
+          ["Marca:", equipoData.marcaMonitor],
+          ["Pulgadas:", equipoData.pulgadasMonitor ? `${equipoData.pulgadasMonitor}"` : "N/A"],
+          ["Código Patrimonial:", equipoData.codigoPatrimonialMonitor || "N/A"],
+          ["Estado:", equipoData.estadoMonitor || "N/A"],
         ];
 
-        infoEquipo.forEach(([label, value]) => {
+        infoMonitor.forEach(([label, value]) => {
           doc
             .fillColor("#374151")
             .fontSize(10)
@@ -1667,246 +1758,204 @@ static async generarReporteGeneralImpresoras(
         });
 
         yPosition += 20;
+      }
 
-        // 2. INFORMACIÓN DEL MONITOR
-        if (equipoData.marcaMonitor) {
-          if (yPosition > 600) {
+      // 3. HISTORIAL COMBINADO (Usuarios + Estados)
+      if (historialEquipo.length > 0) {
+        if (yPosition > 600) {
+          doc.addPage();
+          yPosition = 50;
+        }
+
+        doc
+          .fillColor("#1f2937")
+          .fontSize(16)
+          .font("Helvetica-Bold")
+          .text("HISTORIAL COMPLETO DEL EQUIPO", 50, yPosition);
+        yPosition += 25;
+
+        doc
+          .fillColor("#6b7280")
+          .fontSize(10)
+          .font("Helvetica")
+          .text(
+            "Registro completo de asignaciones, estados y cambios:",
+            50,
+            yPosition
+          );
+        yPosition += 20;
+
+        // Header de la tabla - CAMBIAR "ACCIÓN" por "ESTADO TÉCNICO"
+        doc
+          .fillColor("#1f2937")
+          .fontSize(8)
+          .font("Helvetica-Bold")
+          .text("FECHA", 50, yPosition);
+        doc.text("ESTADO TÉCNICO", 100, yPosition);
+        doc.text("USUARIO/ESTADO", 200, yPosition);
+        doc.text("DETALLES", 350, yPosition);
+        doc.text("SITUACIÓN", 480, yPosition);
+
+        yPosition += 10;
+
+        // Línea separadora del header
+        doc
+          .moveTo(50, yPosition)
+          .lineTo(550, yPosition)
+          .strokeColor("#e5e7eb")
+          .lineWidth(0.5)
+          .stroke();
+
+        yPosition += 8;
+
+        // Filas del historial - VERSIÓN MEJORADA
+        historialEquipo.forEach((registro, index) => {
+          // Verificar ANTES de escribir si necesita nueva página
+          if (yPosition > 700) {
             doc.addPage();
             yPosition = 50;
+
+            // Header de la tabla en nueva página
+            doc
+              .fillColor("#1f2937")
+              .fontSize(8)
+              .font("Helvetica-Bold")
+              .text("FECHA", 50, yPosition);
+            doc.text("ESTADO TÉCNICO", 100, yPosition);
+            doc.text("USUARIO/ESTADO", 200, yPosition);
+            doc.text("DETALLES", 350, yPosition);
+            doc.text("SITUACIÓN", 480, yPosition);
+
+            yPosition += 10;
+            doc
+              .moveTo(50, yPosition)
+              .lineTo(550, yPosition)
+              .strokeColor("#e5e7eb")
+              .lineWidth(0.5)
+              .stroke();
+            yPosition += 8;
           }
 
-          doc
-            .fillColor("#1f2937")
-            .fontSize(16)
-            .font("Helvetica-Bold")
-            .text("INFORMACIÓN DEL MONITOR", 50, yPosition);
-          yPosition += 25;
+          try {
+            const fecha = new Date(registro.createdAt).toLocaleDateString("es-PE");
 
-          const infoMonitor = [
-            ["Marca:", equipoData.marcaMonitor],
-            ["Pulgadas:", equipoData.pulgadasMonitor],
-            [
-              "Código Patrimonial:",
-              equipoData.codigoPatrimonialMonitor || "N/A",
-            ],
-            ["Estado:", equipoData.estadoMonitor],
-          ];
-
-          infoMonitor.forEach(([label, value]) => {
+            // Fecha
             doc
               .fillColor("#374151")
-              .fontSize(10)
-              .font("Helvetica-Bold")
-              .text(label, 50, yPosition);
+              .fontSize(7)
+              .font("Helvetica")
+              .text(fecha, 50, yPosition, { width: 45 });
 
+            // Estado Técnico y Situación
+            let estadoTecnico = equipoData.estado || "N/A";
+            let situacion = equipoData.estado_especial || "N/A";
+            let usuarioEstado = "Sin cambios";
+            let accionTexto = registro.accion;
+
+            if (registro.detalles) {
+              try {
+                const detalles = JSON.parse(registro.detalles);
+
+                estadoTecnico = detalles.next?.estado || detalles.prev?.estado || estadoTecnico;
+                situacion = detalles.next?.estado_especial || detalles.prev?.estado_especial || situacion;
+
+                if (detalles.next?.estado_especial === "revision") {
+                  usuarioEstado = "REVISIÓN";
+                } else if (detalles.next?.estado_especial === "baja") {
+                  usuarioEstado = "BAJA";
+                } else if (detalles.next?.estado_especial === "disponible") {
+                  usuarioEstado = "DISPONIBLE";
+                } else if (detalles.next?.usuarioId && detalles.prev?.usuarioId !== detalles.next?.usuarioId) {
+                  const usuarioId = detalles.next.usuarioId;
+                  const usuarioInfo = usuariosInfo.find((u) => u.usuarioId === usuarioId);
+                  usuarioEstado = usuarioInfo ? `${usuarioInfo.nombres} ${usuarioInfo.apellidos}` : `Usuario ${usuarioId}`;
+                } else if (!detalles.next?.usuarioId && detalles.prev?.usuarioId) {
+                  usuarioEstado = "SIN USUARIO";
+                } else if (detalles.next?.estado_especial) {
+                  usuarioEstado = detalles.next.estado_especial.toUpperCase();
+                } else if (detalles.prev?.estado_especial) {
+                  usuarioEstado = detalles.prev.estado_especial.toUpperCase();
+                } else {
+                  usuarioEstado = situacion.toUpperCase();
+                }
+              } catch (parseError) {
+                accionTexto = "Información de cambio";
+              }
+            }
+
+            // Estado Técnico con color
+            const estadoColor = ReporteController.getColorPorEstado(estadoTecnico);
+            doc
+              .fillColor(estadoColor)
+              .fontSize(7)
+              .font("Helvetica-Bold")
+              .text(estadoTecnico.toUpperCase(), 100, yPosition, { width: 90 });
+
+            // Usuario/Estado
+            doc
+              .fillColor("#374151")
+              .fontSize(7)
+              .font("Helvetica")
+              .text(usuarioEstado, 200, yPosition, { width: 140 });
+
+            // Detalles
             doc
               .fillColor("#6b7280")
-              .fontSize(10)
+              .fontSize(6)
               .font("Helvetica")
-              .text(value || "N/A", 180, yPosition);
+              .text(accionTexto, 350, yPosition, { width: 120 });
 
-            yPosition += 15;
-          });
+            // Situación con color
+            const situacionColor = ReporteController.getColorPorSituacion(situacion);
+            doc
+              .fillColor(situacionColor)
+              .fontSize(7)
+              .font("Helvetica-Bold")
+              .text(situacion.toUpperCase(), 480, yPosition, { width: 60 });
 
-          yPosition += 20;
-        }
+            yPosition += 20;
 
-        // 3. HISTORIAL COMBINADO (Usuarios + Estados)
-        if (historialEquipo.length > 0) {
-          if (yPosition > 600) {
-            doc.addPage();
-            yPosition = 50;
-          }
-
-          doc
-            .fillColor("#1f2937")
-            .fontSize(16)
-            .font("Helvetica-Bold")
-            .text("HISTORIAL COMPLETO DEL EQUIPO", 50, yPosition);
-          yPosition += 25;
-
-          doc
-            .fillColor("#6b7280")
-            .fontSize(10)
-            .font("Helvetica")
-            .text(
-              "Registro completo de asignaciones, estados y cambios:",
-              50,
-              yPosition
-            );
-          yPosition += 20;
-
-          // Header de la tabla - CAMBIAR "ACCIÓN" por "ESTADO TÉCNICO"
-          doc
-            .fillColor("#1f2937")
-            .fontSize(8)
-            .font("Helvetica-Bold")
-            .text("FECHA", 50, yPosition);
-          doc.text("ESTADO TÉCNICO", 100, yPosition);
-          doc.text("USUARIO/ESTADO", 200, yPosition);
-          doc.text("DETALLES", 350, yPosition);
-          doc.text("SITUACIÓN", 480, yPosition);
-
-          yPosition += 10;
-
-          // Línea separadora del header
-          doc
-            .moveTo(50, yPosition)
-            .lineTo(550, yPosition)
-            .strokeColor("#e5e7eb")
-            .lineWidth(0.5)
-            .stroke();
-
-          yPosition += 8;
-
-          // Filas del historial - VERSIÓN MEJORADA
-          historialEquipo.forEach((registro, index) => {
-            // Verificar ANTES de escribir si necesita nueva página
-            if (yPosition > 700) {
-              doc.addPage();
-              yPosition = 50;
-
-              // Header de la tabla en nueva página
+            // Línea separadora entre registros
+            if (index < historialEquipo.length - 1) {
               doc
-                .fillColor("#1f2937")
-                .fontSize(8)
-                .font("Helvetica-Bold")
-                .text("FECHA", 50, yPosition);
-              doc.text("ESTADO TÉCNICO", 100, yPosition);
-              doc.text("USUARIO/ESTADO", 200, yPosition);
-              doc.text("DETALLES", 350, yPosition);
-              doc.text("SITUACIÓN", 480, yPosition);
-
-              yPosition += 10;
-              doc
-                .moveTo(50, yPosition)
-                .lineTo(550, yPosition)
-                .strokeColor("#e5e7eb")
-                .lineWidth(0.5)
+                .moveTo(50, yPosition - 5)
+                .lineTo(550, yPosition - 5)
+                .strokeColor("#f3f4f6")
+                .lineWidth(0.3)
                 .stroke();
-              yPosition += 8;
             }
+          } catch (error) {
+            console.error("Error crítico procesando registro de historial:", error);
+            yPosition += 20;
+          }
+        });
 
-            try {
-              const fecha = new Date(registro.createdAt).toLocaleDateString("es-PE");
-
-              // Fecha
-              doc
-                .fillColor("#374151")
-                .fontSize(7)
-                .font("Helvetica")
-                .text(fecha, 50, yPosition, { width: 45 });
-
-              // Estado Técnico y Situación
-              let estadoTecnico = equipoData.estado || "N/A";
-              let situacion = equipoData.estado_especial || "N/A";
-              let usuarioEstado = "Sin cambios";
-              let accionTexto = registro.accion;
-
-              if (registro.detalles) {
-                try {
-                  const detalles = JSON.parse(registro.detalles);
-
-                  estadoTecnico = detalles.next?.estado || detalles.prev?.estado || estadoTecnico;
-                  situacion = detalles.next?.estado_especial || detalles.prev?.estado_especial || situacion;
-
-                  if (detalles.next?.estado_especial === "revision") {
-                    usuarioEstado = "REVISIÓN";
-                  } else if (detalles.next?.estado_especial === "baja") {
-                    usuarioEstado = "BAJA";
-                  } else if (detalles.next?.estado_especial === "disponible") {
-                    usuarioEstado = "DISPONIBLE";
-                  } else if (detalles.next?.usuarioId && detalles.prev?.usuarioId !== detalles.next?.usuarioId) {
-                    const usuarioId = detalles.next.usuarioId;
-                    const usuarioInfo = usuariosInfo.find((u) => u.usuarioId === usuarioId);
-                    usuarioEstado = usuarioInfo ? `${usuarioInfo.nombres} ${usuarioInfo.apellidos}` : `Usuario ${usuarioId}`;
-                  } else if (!detalles.next?.usuarioId && detalles.prev?.usuarioId) {
-                    usuarioEstado = "SIN USUARIO";
-                  } else if (detalles.next?.estado_especial) {
-                    usuarioEstado = detalles.next.estado_especial.toUpperCase();
-                  } else if (detalles.prev?.estado_especial) {
-                    usuarioEstado = detalles.prev.estado_especial.toUpperCase();
-                  } else {
-                    usuarioEstado = situacion.toUpperCase();
-                  }
-                } catch (parseError) {
-                  accionTexto = "Información de cambio";
-                }
-              }
-
-              // Estado Técnico con color
-              const estadoColor = ReporteController.getColorPorEstado(estadoTecnico);
-              doc
-                .fillColor(estadoColor)
-                .fontSize(7)
-                .font("Helvetica-Bold")
-                .text(estadoTecnico.toUpperCase(), 100, yPosition, { width: 90 });
-
-              // Usuario/Estado
-              doc
-                .fillColor("#374151")
-                .fontSize(7)
-                .font("Helvetica")
-                .text(usuarioEstado, 200, yPosition, { width: 140 });
-
-              // Detalles
-              doc
-                .fillColor("#6b7280")
-                .fontSize(6)
-                .font("Helvetica")
-                .text(accionTexto, 350, yPosition, { width: 120 });
-
-              // Situación con color
-              const situacionColor = ReporteController.getColorPorSituacion(situacion);
-              doc
-                .fillColor(situacionColor)
-                .fontSize(7)
-                .font("Helvetica-Bold")
-                .text(situacion.toUpperCase(), 480, yPosition, { width: 60 });
-
-              yPosition += 20;
-
-              // Línea separadora entre registros
-              if (index < historialEquipo.length - 1) {
-                doc
-                  .moveTo(50, yPosition - 5)
-                  .lineTo(550, yPosition - 5)
-                  .strokeColor("#f3f4f6")
-                  .lineWidth(0.3)
-                  .stroke();
-              }
-            } catch (error) {
-              console.error("Error crítico procesando registro de historial:", error);
-              yPosition += 20;
-            }
-          });
-
-          yPosition += 20;
-        }
-
-        console.log("PDF de equipo generado exitosamente");
-        doc.end();
-      } catch (pdfError: any) {
-        console.error("Error al generar PDF:", pdfError);
-        if (!res.headersSent) {
-          res.status(500).json({
-            error: "Error al generar el PDF",
-            details: pdfError?.message || "Error desconocido en PDF",
-          });
-        }
-        return;
+        yPosition += 20;
       }
-    } catch (err: any) {
-      console.error("Error completo al generar reporte de equipo:", err);
 
+      console.log("PDF de equipo generado exitosamente");
+      doc.end();
+    } catch (pdfError: any) {
+      console.error("Error al generar PDF:", pdfError);
       if (!res.headersSent) {
         res.status(500).json({
-          error: "Error al generar reporte de equipo",
-          details: err?.message || "Error desconocido",
+          error: "Error al generar el PDF",
+          details: pdfError?.message || "Error desconocido en PDF",
         });
       }
+      return;
+    }
+  } catch (err: any) {
+    console.error("Error completo al generar reporte de equipo:", err);
+
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: "Error al generar reporte de equipo",
+        details: err?.message || "Error desconocido",
+      });
     }
   }
+}
 
   //Impresoras
   static async generarReporteImpresora(
