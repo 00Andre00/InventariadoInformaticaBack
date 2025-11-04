@@ -7,10 +7,10 @@ export class DisponiblesController {
     // Asignar equipo a usuario
     static async asignarEquipo(req: Request, res: Response): Promise<Response> {
         const { id } = req.params;
-        const { usuarioId } = req.body;
+        const { usuarioId, oficina } = req.body; // ← Recibir también la oficina
 
-        if (!usuarioId) {
-            return res.status(400).json({ error: 'ID de usuario requerido' });
+        if (!usuarioId || !oficina) {
+            return res.status(400).json({ error: 'ID de usuario y oficina requeridos' });
         }
 
         const usuarioSistemaId = HistorialHelper.obtenerUsuarioSistemaId(req);
@@ -32,7 +32,7 @@ export class DisponiblesController {
 
             const equipoPrev = equipoAnterior[0];
 
-            // 2. Verificar que el equipo esté disponible (CORREGIDO: estado_especial)
+            // 2. Verificar que el equipo esté disponible
             if (equipoPrev.estado_especial !== 'disponible') {
                 await conn.rollback();
                 return res.status(400).json({ error: 'El equipo no está disponible para asignación' });
@@ -49,10 +49,10 @@ export class DisponiblesController {
                 return res.status(404).json({ error: 'Usuario no encontrado' });
             }
 
-            // 4. Actualizar equipo (CORREGIDO: estado_especial)
+            // ✅ CORREGIDO: Actualizar también la oficina
             const [result] = await conn.query<ResultSetHeader>(
-                'UPDATE equipos SET usuarioId = ?, estado_especial = ? WHERE id = ?',
-                [usuarioId, 'asignado', id]
+                'UPDATE equipos SET usuarioId = ?, oficina = ?, estado_especial = ? WHERE id = ?',
+                [usuarioId, oficina, 'asignado', id] // ← Agregar oficina aquí
             );
 
             if (result.affectedRows === 0) {
@@ -60,19 +60,21 @@ export class DisponiblesController {
                 return res.status(404).json({ error: 'Equipo no encontrado' });
             }
 
-            // 5. Registrar en historial (CORREGIDO: estado_especial)
+            // 5. Registrar en historial
             const detalles = {
                 prev: {
                     usuarioId: equipoPrev.usuarioId,
+                    oficina: equipoPrev.oficina, // ← Registrar oficina anterior
                     estado_especial: equipoPrev.estado_especial,
-                    estado: equipoPrev.estado // También registrar el estado físico por si cambia
+                    estado: equipoPrev.estado
                 },
                 next: {
                     usuarioId: usuarioId,
+                    oficina: oficina, // ← Registrar nueva oficina
                     estado_especial: 'asignado',
-                    estado: equipoPrev.estado // Mantener el mismo estado físico
+                    estado: equipoPrev.estado
                 },
-                nota: `Asignado a ${usuario[0].nombres} ${usuario[0].apellidos}`
+                nota: `Asignado a ${usuario[0].nombres} ${usuario[0].apellidos} - Oficina: ${oficina}`
             };
 
             await HistorialHelper.registrarCambio(
@@ -90,6 +92,7 @@ export class DisponiblesController {
                 data: {
                     equipoId: id,
                     usuario: usuario[0],
+                    oficina: oficina,
                     estado_especial: 'asignado'
                 }
             });
@@ -105,10 +108,10 @@ export class DisponiblesController {
     // Asignar impresora a usuario
     static async asignarImpresora(req: Request, res: Response): Promise<Response> {
         const { id } = req.params;
-        const { usuarioId } = req.body;
+        const { usuarioId, oficina } = req.body; // ← Recibir también la oficina
 
-        if (!usuarioId) {
-            return res.status(400).json({ error: 'ID de usuario requerido' });
+        if (!usuarioId || !oficina) {
+            return res.status(400).json({ error: 'ID de usuario y oficina requeridos' });
         }
 
         const usuarioSistemaId = HistorialHelper.obtenerUsuarioSistemaId(req);
@@ -130,7 +133,7 @@ export class DisponiblesController {
 
             const impresoraPrev = impresoraAnterior[0];
 
-            // 2. Verificar que la impresora esté disponible (CORREGIDO: estado_especial)
+            // 2. Verificar que la impresora esté disponible
             if (impresoraPrev.estado_especial !== 'disponible') {
                 await conn.rollback();
                 return res.status(400).json({ error: 'La impresora no está disponible para asignación' });
@@ -147,10 +150,10 @@ export class DisponiblesController {
                 return res.status(404).json({ error: 'Usuario no encontrado' });
             }
 
-            // 4. Actualizar impresora (CORREGIDO: estado_especial)
+            // ✅ CORREGIDO: Actualizar también la oficina
             const [result] = await conn.query<ResultSetHeader>(
-                'UPDATE impresoras SET usuarioId = ?, estado_especial = ? WHERE id = ?',
-                [usuarioId, 'asignado', id]
+                'UPDATE impresoras SET usuarioId = ?, oficina = ?, estado_especial = ? WHERE id = ?',
+                [usuarioId, oficina, 'asignado', id] // ← Agregar oficina aquí
             );
 
             if (result.affectedRows === 0) {
@@ -158,19 +161,21 @@ export class DisponiblesController {
                 return res.status(404).json({ error: 'Impresora no encontrada' });
             }
 
-            // 5. Registrar en historial (CORREGIDO: estado_especial)
+            // 5. Registrar en historial
             const detalles = {
                 prev: {
                     usuarioId: impresoraPrev.usuarioId,
+                    oficina: impresoraPrev.oficina, // ← Registrar oficina anterior
                     estado_especial: impresoraPrev.estado_especial,
                     estado: impresoraPrev.estado
                 },
                 next: {
                     usuarioId: usuarioId,
+                    oficina: oficina, // ← Registrar nueva oficina
                     estado_especial: 'asignado',
                     estado: impresoraPrev.estado
                 },
-                nota: `Asignado a ${usuario[0].nombres} ${usuario[0].apellidos}`
+                nota: `Asignado a ${usuario[0].nombres} ${usuario[0].apellidos} - Oficina: ${oficina}`
             };
 
             await HistorialHelper.registrarCambio(
@@ -188,6 +193,7 @@ export class DisponiblesController {
                 data: {
                     impresoraId: id,
                     usuario: usuario[0],
+                    oficina: oficina,
                     estado_especial: 'asignado'
                 }
             });
@@ -200,7 +206,7 @@ export class DisponiblesController {
         }
     }
 
-    // Obtener equipos disponibles (CORREGIDO: estado_especial)
+    // Obtener equipos disponibles
     static async obtenerEquiposDisponibles(req: Request, res: Response): Promise<Response> {
         try {
             const [rows] = await db.promise().query<RowDataPacket[]>(
@@ -219,7 +225,7 @@ export class DisponiblesController {
         }
     }
 
-    // Obtener impresoras disponibles (CORREGIDO: estado_especial)
+    // Obtener impresoras disponibles
     static async obtenerImpresorasDisponibles(req: Request, res: Response): Promise<Response> {
         try {
             const [rows] = await db.promise().query<RowDataPacket[]>(
