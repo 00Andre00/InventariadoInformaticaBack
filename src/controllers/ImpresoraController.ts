@@ -263,60 +263,73 @@ class ImpresoraController {
                 return res.status(404).json({ message: 'Impresora no encontrada' });
             }
 
-            // 3. Registrar en historial si hay cambios importantes
-            const cambios: string[] = [];
+// 3. Registrar en historial si hay cambios importantes
+const cambios: string[] = [];
 
-            // Verificar cambios en asignación/desasignación
-            if (impresoraPrev.usuarioId !== (usuarioId || null)) {
-                if (usuarioId) {
-                    cambios.push('asignacion');
-                } else {
-                    cambios.push('desasignacion');
-                }
-            }
+// Verificar cambios en asignación/desasignación
+if (impresoraPrev.usuarioId !== (usuarioId || null)) {
+    if (usuarioId) {
+        cambios.push('asignacion');
+    } else {
+        cambios.push('desasignacion');
+    }
+}
 
-            if (impresoraPrev.oficina !== oficina) {
-                cambios.push('traslado');
-            }
+if (impresoraPrev.oficina !== oficina) {
+    cambios.push('traslado');
+}
 
-            if (impresoraPrev.ip !== ip || impresoraPrev.mac !== mac) {
-                cambios.push('actualizacion_red');
-            }
+if (impresoraPrev.ip !== ip || impresoraPrev.mac !== mac) {
+    cambios.push('actualizacion_red');
+}
 
-            if (impresoraPrev.estado !== estado) {
-                cambios.push('cambio_estado');
-            }
+if (impresoraPrev.estado !== estado) {
+    cambios.push('cambio_estado');
+}
 
-            // Registrar cada cambio en el historial
-            for (const accion of cambios) {
-                const detalles = {
-                    prev: {
-                        usuarioId: impresoraPrev.usuarioId,
-                        oficina: impresoraPrev.oficina,
-                        ip: impresoraPrev.ip,
-                        mac: impresoraPrev.mac,
-                        estado: impresoraPrev.estado,
-                        estado_especial: impresoraPrev.estado_especial
-                    },
-                    next: {
-                        usuarioId: usuarioId || null,
-                        oficina: oficina,
-                        ip: ip,
-                        mac: mac,
-                        estado: estado,
-                        estado_especial: estadoEspecial
-                    },
-                    nota: `Actualización desde panel - ${accion}`
-                };
+// ✅ CORREGIDO: Registrar solo UN registro de historial con todos los cambios
+if (cambios.length > 0) {
+    let accionPrincipal = 'actualizacion';
+    let nota = 'Actualización desde panel';
+    
+    // Determinar la acción principal (prioridad: asignación > otros cambios)
+    if (cambios.includes('asignacion') || cambios.includes('desasignacion')) {
+        accionPrincipal = cambios.includes('asignacion') ? 'asignacion' : 'desasignacion';
+        nota = `Reasignación - ${accionPrincipal}`;
+    } else if (cambios.includes('traslado')) {
+        accionPrincipal = 'traslado';
+        nota = `Traslado de oficina desde ${impresoraPrev.oficina} a ${oficina}`;
+    }
 
-                await HistorialHelper.registrarCambio(
-                    'impresora',
-                    parseInt(id),
-                    accion,
-                    detalles,
-                    usuarioSistemaId
-                );
-            }
+    const detallesHistorial = {
+        prev: {
+            usuarioId: impresoraPrev.usuarioId,
+            oficina: impresoraPrev.oficina,
+            ip: impresoraPrev.ip,
+            mac: impresoraPrev.mac,
+            estado: impresoraPrev.estado,
+            estado_especial: impresoraPrev.estado_especial
+        },
+        next: {
+            usuarioId: usuarioId || null,
+            oficina: oficina,
+            ip: ip,
+            mac: mac,
+            estado: estado,
+            estado_especial: estadoEspecial
+        },
+        nota: nota,
+        cambios_realizados: cambios // ✅ Incluir lista de cambios en los detalles
+    };
+
+    await HistorialHelper.registrarCambio(
+        'impresora',
+        parseInt(id),
+        accionPrincipal,
+        detallesHistorial,
+        usuarioSistemaId
+    );
+}
 
             await conn.commit();
 
