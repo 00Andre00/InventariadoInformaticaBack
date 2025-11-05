@@ -1,8 +1,13 @@
+import dotenv from 'dotenv';
+dotenv.config(); 
+
 import express from 'express';
 import cors from 'cors';
 import equipoRoutes from './routes/equipoRoutes';
 import authRoutes from './routes/authRoutes';
 import sistemaRoutes from './routes/sistemaRoutes'; // Nueva importación
+import reniecRoutes from './routes/reniecRoutes'; // Nueva importación
+
 
 const app = express();
 
@@ -16,6 +21,8 @@ app.use('/api/auth', authRoutes);
 // Rutas protegidas
 app.use('/api', equipoRoutes);
 app.use('/api/sistema', sistemaRoutes); // Nuevas rutas del sistema
+app.use('/api/reniec', reniecRoutes); // 👈 Agrega esta línea
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
