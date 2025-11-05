@@ -19,6 +19,7 @@ router.delete('/equipos/:id', requireAdmin, asyncHandler(EquipoController.elimin
 router.get('/buscar-equipos', asyncHandler(EquipoController.buscarEquipos));
 router.get('/exportar-equipos', asyncHandler(EquipoController.exportarEquipos));
 
+
 // Rutas para impresoras
 router.post('/impresoras', requireAdmin, asyncHandler(ImpresoraController.crearImpresora));
 router.get('/impresoras', asyncHandler(ImpresoraController.obtenerImpresoras));
@@ -39,5 +40,14 @@ router.get('/buscar-usuarios', asyncHandler(UsuarioController.buscarUsuarios));
 router.get('/exportar-usuarios', asyncHandler(UsuarioController.exportarUsuarios));
 router.get('/usuarios/:id/equipos', asyncHandler(UsuarioController.obtenerEquiposUsuario));
 router.get('/usuarios/:id/impresoras', asyncHandler(UsuarioController.obtenerImpresorasUsuario));
+
+// ✅ NUEVAS RUTAS PARA TRANSFERENCIA EN BLOQUE - DENTRO DEL CONTEXTO DE EQUIPOS
+router.get('/equipos/usuario/:usuarioId', asyncHandler(EquipoController.obtenerEquiposPorUsuario));
+router.post('/equipos/transferencia-bloque', requireAdmin, asyncHandler(EquipoController.transferenciaEnBloque));
+
+// ✅ NUEVAS RUTAS PARA TRANSFERENCIA EN BLOQUE DE IMPRESORAS
+router.get('/impresoras/usuario/:usuarioId', asyncHandler(ImpresoraController.obtenerImpresorasPorUsuario));
+router.post('/impresoras/transferencia-bloque', requireAdmin, asyncHandler(ImpresoraController.transferenciaEnBloque));
+
 
 export default router;
