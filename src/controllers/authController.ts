@@ -3,7 +3,11 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import db from '../config/db';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'tu_clave_secreta_muy_segura_aqui';
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+    throw new Error('JWT_SECRET no está definido en las variables de entorno');
+}
 
 export const login = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -40,7 +44,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
                 username: user.username,
                 rol: user.rol 
             },
-            JWT_SECRET,
+            JWT_SECRET, // Ahora TypeScript sabe que no es undefined
             { expiresIn: '24h' }
         );
 
