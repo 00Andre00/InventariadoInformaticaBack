@@ -83,3 +83,16 @@ export const requireInformatica = (
     }
     next();
 };
+
+// ✅ NUEVO MIDDLEWARE: Permite tanto admin como informatica
+export const requireAdminOrInformatica = (
+    req: AuthenticatedRequest, 
+    res: Response, 
+    next: NextFunction
+): void => {
+    if (!['admin', 'informatica'].includes(req.user?.rol || '')) {
+        res.status(403).json({ error: 'Se requieren permisos de administrador o informática' });
+        return;
+    }
+    next();
+};
