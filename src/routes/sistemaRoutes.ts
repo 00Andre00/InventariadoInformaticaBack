@@ -60,6 +60,8 @@ router.put('/equipos/:id/devolver-informatica', requireAdmin, asyncHandler(Revis
 router.get('/fecha-baja/:tipo/:id', authenticateToken, asyncHandler(RevisionController.obtenerFechaBaja));
 router.get('/historial/:tipo/:id', authenticateToken, asyncHandler(RevisionController.obtenerHistorialCompleto));
 
+
+
 // Rutas para recursos disponibles
 router.put('/equipos/:id/asignar', requireInformatica, asyncHandler(DisponiblesController.asignarEquipo));
 router.put('/impresoras/:id/asignar', requireInformatica, asyncHandler(DisponiblesController.asignarImpresora));
