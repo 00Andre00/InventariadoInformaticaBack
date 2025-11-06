@@ -205,32 +205,28 @@ class UsuarioController {
     }
 
     // Buscar usuarios
-    static async buscarUsuarios(req: Request, res: Response): Promise<Response> {
-        const { dni, nombres, apellidos, oficina } = req.query;
-        let query = 'SELECT * FROM usuarios WHERE 1=1';
-        const params: any[] = [];
-
-        if (dni) {
-            query += ' AND dni LIKE ?';
-            params.push(`%${dni}%`);
-        }
-        if (nombres) {
-            query += ' AND nombres LIKE ?';
-            params.push(`%${nombres}%`);
-        }
-        if (apellidos) {
-            query += ' AND apellidos LIKE ?';
-            params.push(`%${apellidos}%`);
-        }
-        if (oficina) {
-            query += ' AND oficina LIKE ?';
-            params.push(`%${oficina}%`);
-        }
-
-        query += ' ORDER BY apellidos, nombres';
-
+ // Buscar usuarios - VERSIÓN CORREGIDA
+static async buscarUsuarios(req: Request, res: Response): Promise<Response> {
+    const { search, dni, nombres, apellidos, oficina } = req.query;
+    
+    // Si viene el parámetro 'search', buscar en todos los campos
+    if (search) {
+        const searchTerm = `%${search}%`;
+        const query = `
+            SELECT * FROM usuarios 
+            WHERE nombres LIKE ? 
+               OR apellidos LIKE ? 
+               OR dni LIKE ?
+            ORDER BY apellidos, nombres
+            LIMIT 50
+        `;
+        
         try {
-            const [rows] = await db.promise().query<Usuario[]>(query, params);
+            const [rows] = await db.promise().query<Usuario[]>(query, [
+                searchTerm, 
+                searchTerm, 
+                searchTerm
+            ]);
             return res.status(200).json({ 
                 data: rows, 
                 total: rows.length 
@@ -240,6 +236,41 @@ class UsuarioController {
             return res.status(500).json({ error: 'Error al buscar usuarios' });
         }
     }
+    
+    // Si no viene 'search', usar búsqueda por campos específicos (compatibilidad)
+    let query = 'SELECT * FROM usuarios WHERE 1=1';
+    const params: any[] = [];
+
+    if (dni) {
+        query += ' AND dni LIKE ?';
+        params.push(`%${dni}%`);
+    }
+    if (nombres) {
+        query += ' AND nombres LIKE ?';
+        params.push(`%${nombres}%`);
+    }
+    if (apellidos) {
+        query += ' AND apellidos LIKE ?';
+        params.push(`%${apellidos}%`);
+    }
+    if (oficina) {
+        query += ' AND oficina LIKE ?';
+        params.push(`%${oficina}%`);
+    }
+
+    query += ' ORDER BY apellidos, nombres LIMIT 50';
+
+    try {
+        const [rows] = await db.promise().query<Usuario[]>(query, params);
+        return res.status(200).json({ 
+            data: rows, 
+            total: rows.length 
+        });
+    } catch (err) {
+        console.error('Error al buscar usuarios:', err);
+        return res.status(500).json({ error: 'Error al buscar usuarios' });
+    }
+}
 
     // Exportar usuarios (para frontend y Excel)
     static async exportarUsuarios(req: Request, res: Response): Promise<Response> {
