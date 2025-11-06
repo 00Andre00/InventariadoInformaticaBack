@@ -7,14 +7,18 @@ import { HistorialHelper } from "../utils/historialHelper";
 export class ReporteController {
   
   // MÉTODO MEJORADO PARA VERIFICAR ESPACIO EN PÁGINA
-  private static necesitaNuevaPagina(doc: PDFKit.PDFDocument, yPosition: number, filasNecesarias: number = 1): number {
-    // Solo verificar para la próxima fila, no para todas
-    if (yPosition > 750) { // Límite más alto
-        doc.addPage();
-        return 50;
-    }
-    return yPosition;
+private static necesitaNuevaPagina(
+  doc: PDFKit.PDFDocument, 
+  yPosition: number, 
+  espacioNecesario: number = 30
+): number {
+  // Si no hay suficiente espacio para el contenido siguiente
+  if (yPosition + espacioNecesario > 720) {
+    doc.addPage();
+    return 80; // Posición inicial en nueva página (más espacio para el header si es necesario)
   }
+  return yPosition;
+}
 
   // MÉTODO PARA AGREGAR HEADER DE TABLA EN NUEVA PÁGINA
   private static agregarHeaderTablaGeneral(doc: PDFKit.PDFDocument, y: number): void {
@@ -83,63 +87,56 @@ export class ReporteController {
         [id]
       );
 
-      // 3. HISTÓRICO DE EQUIPOS
-      const [historicoEquipos] = await db.promise().query<RowDataPacket[]>(
-        `SELECT e.*,
-          (SELECT hc.createdAt FROM historial_cambios hc 
-           WHERE hc.activo_id = e.id AND hc.tipo_activo = 'equipo' 
-           AND (hc.accion = 'asignacion' OR hc.accion = 'asignado' OR hc.accion LIKE '%asign%' OR hc.accion = 'reasignacion')
-           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion,
-          (SELECT hc.createdAt FROM historial_cambios hc 
-           WHERE hc.activo_id = e.id AND hc.tipo_activo = 'equipo' 
-           AND (hc.accion = 'revision' OR hc.accion = 'baja' OR hc.accion = 'enviado_a_revision' OR hc.accion = 'dado_de_baja' OR hc.accion = 'desasignacion' OR hc.accion = 'reasignacion') 
-           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_desasignacion
-   FROM equipos e 
-   WHERE e.id IN (
-     SELECT DISTINCT activo_id FROM historial_cambios 
-     WHERE tipo_activo = 'equipo' 
-     AND (detalles LIKE ? OR detalles LIKE ? OR detalles LIKE ? OR accion LIKE '%asign%' OR accion = 'reasignacion')
-   )
-   AND e.id NOT IN (
-     SELECT id FROM equipos WHERE usuarioId = ? AND estado_especial = 'asignado'
-   )
-   ORDER BY fecha_desasignacion DESC, fecha_asignacion DESC`,
-        [
-          `%${usuarioData.nombres}%`,
-          `%${usuarioData.apellidos}%`,
-          `%${usuarioData.nombres} ${usuarioData.apellidos}%`,
-          id,
-        ]
-      );
+   // 3. HISTÓRICO DE EQUIPOS - VERSIÓN SIMPLE
+const [historicoEquipos] = await db.promise().query<RowDataPacket[]>(
+  `SELECT DISTINCT e.*,
+    (SELECT hc.createdAt FROM historial_cambios hc 
+     WHERE hc.activo_id = e.id AND hc.tipo_activo = 'equipo' 
+     AND (hc.accion = 'asignacion' OR hc.accion = 'asignado' OR hc.accion = 'reasignacion')
+     AND hc.detalles LIKE CONCAT('%"usuarioId":', ?, '%')
+     ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion,
+    (SELECT hc.createdAt FROM historial_cambios hc 
+     WHERE hc.activo_id = e.id AND hc.tipo_activo = 'equipo' 
+     AND hc.accion IN ('revision', 'baja', 'enviado_a_revision', 'dado_de_baja', 'desasignacion', 'reasignacion')
+     ORDER BY hc.createdAt DESC LIMIT 1) as fecha_desasignacion
+FROM equipos e 
+INNER JOIN historial_cambios hc ON hc.activo_id = e.id AND hc.tipo_activo = 'equipo'
+WHERE hc.detalles LIKE CONCAT('%"usuarioId":', ?, '%')
+AND e.id NOT IN (
+  SELECT id FROM equipos WHERE usuarioId = ? AND estado_especial = 'asignado'
+)
+ORDER BY fecha_desasignacion DESC, fecha_asignacion DESC`,
+  [id, id, id]
+);
 
-      // 4. HISTÓRICO DE IMPRESORAS
-      const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
-        `SELECT i.*,
-          (SELECT hc.createdAt FROM historial_cambios hc 
-           WHERE hc.activo_id = i.id AND hc.tipo_activo = 'impresora' 
-           AND (hc.accion = 'asignacion' OR hc.accion = 'asignada' OR hc.accion LIKE '%asign%' OR hc.accion = 'reasignacion')
-           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion,
-          (SELECT hc.createdAt FROM historial_cambios hc 
-           WHERE hc.activo_id = i.id AND hc.tipo_activo = 'impresora' 
-           AND (hc.accion = 'revision' OR hc.accion = 'baja' OR hc.accion = 'enviado_a_revision' OR hc.accion = 'dada_de_baja' OR hc.accion = 'desasignacion' OR hc.accion = 'reasignacion') 
-           ORDER BY hc.createdAt DESC LIMIT 1) as fecha_desasignacion
-   FROM impresoras i 
-   WHERE i.id IN (
-     SELECT DISTINCT activo_id FROM historial_cambios 
-     WHERE tipo_activo = 'impresora' 
-     AND (detalles LIKE ? OR detalles LIKE ? OR detalles LIKE ? OR accion LIKE '%asign%' OR accion = 'reasignacion')
-   )
-   AND i.id NOT IN (
-     SELECT id FROM impresoras WHERE usuarioId = ? AND estado_especial = 'asignado'
-   )
-   ORDER BY fecha_desasignacion DESC, fecha_asignacion DESC`,
-        [
-          `%${usuarioData.nombres}%`,
-          `%${usuarioData.apellidos}%`,
-          `%${usuarioData.nombres} ${usuarioData.apellidos}%`,
-          id,
-        ]
-      );
+  // 4. HISTÓRICO DE IMPRESORAS - VERSIÓN ROBUSTA
+const [historicoImpresoras] = await db.promise().query<RowDataPacket[]>(
+  `SELECT DISTINCT i.*,
+    (SELECT hc.createdAt FROM historial_cambios hc 
+     WHERE hc.activo_id = i.id AND hc.tipo_activo = 'impresora' 
+     AND hc.detalles REGEXP CONCAT('"usuarioId"[[:space:]]*:[[:space:]]*', ?)
+     ORDER BY hc.createdAt DESC LIMIT 1) as fecha_asignacion,
+    (SELECT hc.createdAt FROM historial_cambios hc 
+     WHERE hc.activo_id = i.id AND hc.tipo_activo = 'impresora' 
+     AND (hc.accion IN ('revision', 'baja', 'enviado_a_revision', 'dada_de_baja', 'desasignacion', 'reasignacion'))
+     ORDER BY hc.createdAt DESC LIMIT 1) as fecha_desasignacion
+FROM impresoras i 
+WHERE EXISTS (
+  SELECT 1 FROM historial_cambios hc
+  WHERE hc.tipo_activo = 'impresora' 
+  AND hc.activo_id = i.id
+  AND (
+    hc.detalles REGEXP CONCAT('"next"[^}]*"usuarioId"[[:space:]]*:[[:space:]]*', ?)
+    OR (hc.detalles REGEXP CONCAT('"prev"[^}]*"usuarioId"[[:space:]]*:[[:space:]]*', ?)
+        AND hc.accion IN ('desasignacion', 'reasignacion'))
+  )
+)
+AND i.id NOT IN (
+  SELECT id FROM impresoras WHERE usuarioId = ? AND estado_especial = 'asignado'
+)
+ORDER BY fecha_desasignacion DESC, fecha_asignacion DESC`,
+  [id, id, id, id]
+);
 
       // Crear PDF
       const doc = new PDFDocument({
@@ -341,53 +338,57 @@ export class ReporteController {
   }
 
   // MÉTODOS MEJORADOS PARA TABLAS CON CONTROL DE PÁGINAS
-  private static agregarTablaEquiposActualesMejorado(
-    doc: PDFKit.PDFDocument,
-    equipos: any[],
-    startY: number
-  ): number {
-    let y = startY;
+private static agregarTablaEquiposActualesMejorado(
+  doc: PDFKit.PDFDocument,
+  equipos: any[],
+  startY: number
+): number {
+  let y = startY;
 
     // Header
-    ReporteController.agregarHeaderEquiposActuales(doc, y);
-    y += 20;
+    y = ReporteController.necesitaNuevaPagina(doc, y, 60);
+  ReporteController.agregarHeaderEquiposActuales(doc, y);
+  y += 25;
 
     // Filas
     equipos.forEach((equipo, index) => {
-      y = ReporteController.necesitaNuevaPagina(doc, y, 1);
-      if (y === 50) {
-        ReporteController.agregarHeaderEquiposActuales(doc, y);
-        y += 20;
-      }
+    // Verificar espacio ANTES de escribir
+    y = ReporteController.necesitaNuevaPagina(doc, y, 25);
+    
+    // Si acabamos de crear una nueva página, redibujar header
+    if (y < 100) {
+      ReporteController.agregarHeaderEquiposActuales(doc, y);
+      y += 25;
+    }
 
-      doc
-        .fillColor("#374151")
-        .fontSize(8)
-        .font("Helvetica")
-        .text(equipo.codigoPatrimonial || "Sin código", 50, y, { width: 65 });
+    doc
+      .fillColor("#374151")
+      .fontSize(8)
+      .font("Helvetica")
+      .text(equipo.codigoPatrimonial || "Sin código", 50, y, { width: 65 });
 
-      doc.text(`${equipo.tipo} ${equipo.marca} ${equipo.modelo}`, 120, y, {
-        width: 120,
-      });
+    doc.text(`${equipo.tipo} ${equipo.marca} ${equipo.modelo}`, 120, y, {
+      width: 120,
+    });
 
-      const fechaAsignacion = equipo.fecha_asignacion
-        ? new Date(equipo.fecha_asignacion).toLocaleDateString("es-PE")
-        : "Fecha no registrada";
-      doc.text(fechaAsignacion, 250, y, { width: 100 });
+    const fechaAsignacion = equipo.fecha_asignacion
+      ? new Date(equipo.fecha_asignacion).toLocaleDateString("es-PE")
+      : "Fecha no registrada";
+    doc.text(fechaAsignacion, 250, y, { width: 100 });
 
-      const estadoColor = ReporteController.getColorPorEstado(equipo.estado);
-      doc
-        .fillColor(estadoColor)
-        .text(equipo.estado || "Activo", 400, y, { width: 80 });
+    const estadoColor = ReporteController.getColorPorEstado(equipo.estado);
+    doc
+      .fillColor(estadoColor)
+      .text(equipo.estado || "Activo", 400, y, { width: 80 });
 
-      y += 20;
+    y += 20;
 
       // Línea separadora entre filas
       if (index < equipos.length - 1) {
-        doc.moveTo(50, y - 5).lineTo(550, y - 5)
-           .strokeColor("#f3f4f6").lineWidth(0.3).stroke();
-      }
-    });
+      doc.moveTo(50, y - 5).lineTo(550, y - 5)
+         .strokeColor("#f3f4f6").lineWidth(0.3).stroke();
+    }
+  });
 
     return y + 20;
   }
@@ -404,52 +405,56 @@ export class ReporteController {
   }
 
   private static agregarTablaImpresorasActualesMejorado(
-    doc: PDFKit.PDFDocument,
-    impresoras: any[],
-    startY: number
-  ): number {
-    let y = startY;
+  doc: PDFKit.PDFDocument,
+  impresoras: any[],
+  startY: number
+): number {
+  let y = startY;
 
     // Header
-    ReporteController.agregarHeaderImpresorasActuales(doc, y);
-    y += 20;
+    y = ReporteController.necesitaNuevaPagina(doc, y, 60);
+  ReporteController.agregarHeaderImpresorasActuales(doc, y);
+  y += 25;
 
     // Filas
     impresoras.forEach((impresora, index) => {
-      y = ReporteController.necesitaNuevaPagina(doc, y, 1);
-      if (y === 50) {
-        ReporteController.agregarHeaderImpresorasActuales(doc, y);
-        y += 20;
-      }
+    // Verificar espacio ANTES de escribir
+    y = ReporteController.necesitaNuevaPagina(doc, y, 25);
+    
+    // Si acabamos de crear una nueva página, redibujar header
+    if (y < 100) {
+      ReporteController.agregarHeaderImpresorasActuales(doc, y);
+      y += 25;
+    }
 
-      doc
-        .fillColor("#374151")
-        .fontSize(8)
-        .font("Helvetica")
-        .text(impresora.codigoPatrimonial || "Sin código", 50, y, {
-          width: 65,
-        });
+     doc
+      .fillColor("#374151")
+      .fontSize(8)
+      .font("Helvetica")
+      .text(impresora.codigoPatrimonial || "Sin código", 50, y, {
+        width: 65,
+      });
 
-      doc.text(impresora.modelo, 120, y, { width: 120 });
+    doc.text(impresora.modelo, 120, y, { width: 120 });
 
-      const fechaAsignacion = impresora.fecha_asignacion
-        ? new Date(impresora.fecha_asignacion).toLocaleDateString("es-PE")
-        : "Fecha no registrada";
-      doc.text(fechaAsignacion, 250, y, { width: 100 });
+    const fechaAsignacion = impresora.fecha_asignacion
+      ? new Date(impresora.fecha_asignacion).toLocaleDateString("es-PE")
+      : "Fecha no registrada";
+    doc.text(fechaAsignacion, 250, y, { width: 100 });
 
-      const estadoColor = ReporteController.getColorPorEstado(impresora.estado);
-      doc
-        .fillColor(estadoColor)
-        .text(impresora.estado || "Activo", 400, y, { width: 80 });
+    const estadoColor = ReporteController.getColorPorEstado(impresora.estado);
+    doc
+      .fillColor(estadoColor)
+      .text(impresora.estado || "Activo", 400, y, { width: 80 });
 
-      y += 20;
+    y += 20;
 
-      // Línea separadora entre filas
-      if (index < impresoras.length - 1) {
-        doc.moveTo(50, y - 5).lineTo(550, y - 5)
-           .strokeColor("#f3f4f6").lineWidth(0.3).stroke();
-      }
-    });
+    // Línea separadora entre filas
+    if (index < impresoras.length - 1) {
+      doc.moveTo(50, y - 5).lineTo(550, y - 5)
+         .strokeColor("#f3f4f6").lineWidth(0.3).stroke();
+    }
+  });
 
     return y + 20;
   }
@@ -465,63 +470,67 @@ export class ReporteController {
     doc.moveTo(50, y).lineTo(550, y).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
   }
 
-  private static agregarTablaHistoricoEquiposMejorado(
-    doc: PDFKit.PDFDocument,
-    equipos: any[],
-    startY: number
-  ): number {
-    let y = startY;
+private static agregarTablaHistoricoEquiposMejorado(
+  doc: PDFKit.PDFDocument,
+  equipos: any[],
+  startY: number
+): number {
+  let y = startY;
 
     // Header
-    ReporteController.agregarHeaderHistoricoEquipos(doc, y);
-    y += 18;
+     y = ReporteController.necesitaNuevaPagina(doc, y, 60);
+  ReporteController.agregarHeaderHistoricoEquipos(doc, y);
+  y += 25;
 
     // Filas
     equipos.forEach((equipo, index) => {
-      y = ReporteController.necesitaNuevaPagina(doc, y, 1);
-      if (y === 50) {
-        ReporteController.agregarHeaderHistoricoEquipos(doc, y);
-        y += 18;
-      }
-
-      doc
-        .fillColor("#374151")
-        .fontSize(7)
-        .font("Helvetica")
-        .text(equipo.codigoPatrimonial || "Sin código", 50, y, { width: 35 });
-
-      doc.text(`${equipo.tipo} ${equipo.marca} ${equipo.modelo}`, 90, y, {
-        width: 100,
-      });
-
-      const fechaAsignacion = equipo.fecha_asignacion
-        ? new Date(equipo.fecha_asignacion).toLocaleDateString("es-PE")
-        : "No registrada";
-      doc.text(fechaAsignacion, 200, y, { width: 90 });
-
-      const fechaDesasignacion = equipo.fecha_desasignacion
-        ? new Date(equipo.fecha_desasignacion).toLocaleDateString("es-PE")
-        : "No registrada";
-      doc.text(fechaDesasignacion, 320, y, { width: 90 });
-
-      const situacionColor = ReporteController.getColorPorSituacion(
-        equipo.estado_especial
-      );
-      doc
-        .fillColor(situacionColor)
-        .text(equipo.estado_especial || "Disponible", 450, y, { width: 70 });
-
+    // Verificar espacio ANTES de escribir
+    y = ReporteController.necesitaNuevaPagina(doc, y, 30);
+    
+    // Si acabamos de crear una nueva página, redibujar header
+    if (y < 100) {
+      ReporteController.agregarHeaderHistoricoEquipos(doc, y);
       y += 25;
+    }
 
-      // Línea separadora entre filas
-      if (index < equipos.length - 1) {
-        doc.moveTo(50, y - 10).lineTo(550, y - 10)
-           .strokeColor("#f3f4f6").lineWidth(0.3).stroke();
-      }
+    doc
+      .fillColor("#374151")
+      .fontSize(7)
+      .font("Helvetica")
+      .text(equipo.codigoPatrimonial || "Sin código", 50, y, { width: 35 });
+
+    doc.text(`${equipo.tipo} ${equipo.marca} ${equipo.modelo}`, 90, y, {
+      width: 100,
     });
 
-    return y + 20;
-  }
+       const fechaAsignacion = equipo.fecha_asignacion
+      ? new Date(equipo.fecha_asignacion).toLocaleDateString("es-PE")
+      : "No registrada";
+    doc.text(fechaAsignacion, 200, y, { width: 90 });
+
+    const fechaDesasignacion = equipo.fecha_desasignacion
+      ? new Date(equipo.fecha_desasignacion).toLocaleDateString("es-PE")
+      : "No registrada";
+    doc.text(fechaDesasignacion, 320, y, { width: 90 });
+
+    const situacionColor = ReporteController.getColorPorSituacion(
+      equipo.estado_especial
+    );
+    doc
+      .fillColor(situacionColor)
+      .text(equipo.estado_especial || "Disponible", 450, y, { width: 70 });
+
+    y += 25;
+
+      // Línea separadora entre filas
+     if (index < equipos.length - 1) {
+      doc.moveTo(50, y - 10).lineTo(550, y - 10)
+         .strokeColor("#f3f4f6").lineWidth(0.3).stroke();
+    }
+  });
+
+  return y + 20;
+}
 
   private static agregarHeaderHistoricoEquipos(doc: PDFKit.PDFDocument, y: number): void {
     doc.fillColor("#1f2937").fontSize(8).font("Helvetica-Bold")
@@ -535,63 +544,67 @@ export class ReporteController {
     doc.moveTo(50, y).lineTo(550, y).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
   }
 
-  private static agregarTablaHistoricoImpresorasMejorado(
-    doc: PDFKit.PDFDocument,
-    impresoras: any[],
-    startY: number
-  ): number {
-    let y = startY;
+ private static agregarTablaHistoricoImpresorasMejorado(
+  doc: PDFKit.PDFDocument,
+  impresoras: any[],
+  startY: number
+): number {
+  let y = startY;
 
     // Header
-    ReporteController.agregarHeaderHistoricoImpresoras(doc, y);
-    y += 18;
+     y = ReporteController.necesitaNuevaPagina(doc, y, 60);
+  ReporteController.agregarHeaderHistoricoImpresoras(doc, y);
+  y += 25;
 
     // Filas
-    impresoras.forEach((impresora, index) => {
-      y = ReporteController.necesitaNuevaPagina(doc, y, 1);
-      if (y === 50) {
-        ReporteController.agregarHeaderHistoricoImpresoras(doc, y);
-        y += 18;
-      }
+   impresoras.forEach((impresora, index) => {
+    // Verificar espacio ANTES de escribir
+    y = ReporteController.necesitaNuevaPagina(doc, y, 30);
+    
+    // Si acabamos de crear una nueva página, redibujar header
+    if (y < 100) {
+      ReporteController.agregarHeaderHistoricoImpresoras(doc, y);
+      y += 25;
+    }
 
-      doc
-        .fillColor("#374151")
-        .fontSize(7)
-        .font("Helvetica")
-        .text(impresora.codigoPatrimonial || "Sin código", 50, y, {
-          width: 35,
-        });
+    doc
+      .fillColor("#374151")
+      .fontSize(7)
+      .font("Helvetica")
+      .text(impresora.codigoPatrimonial || "Sin código", 50, y, {
+        width: 35,
+      });
 
       doc.text(impresora.modelo, 90, y, { width: 100 });
 
-      const fechaAsignacion = impresora.fecha_asignacion
-        ? new Date(impresora.fecha_asignacion).toLocaleDateString("es-PE")
-        : "No registrada";
-      doc.text(fechaAsignacion, 200, y, { width: 90 });
+    const fechaAsignacion = impresora.fecha_asignacion
+      ? new Date(impresora.fecha_asignacion).toLocaleDateString("es-PE")
+      : "No registrada";
+    doc.text(fechaAsignacion, 200, y, { width: 90 });
 
-      const fechaDesasignacion = impresora.fecha_desasignacion
-        ? new Date(impresora.fecha_desasignacion).toLocaleDateString("es-PE")
-        : "No registrada";
-      doc.text(fechaDesasignacion, 320, y, { width: 90 });
+    const fechaDesasignacion = impresora.fecha_desasignacion
+      ? new Date(impresora.fecha_desasignacion).toLocaleDateString("es-PE")
+      : "No registrada";
+    doc.text(fechaDesasignacion, 320, y, { width: 90 });
 
-      const situacionColor = ReporteController.getColorPorSituacion(
-        impresora.estado_especial
-      );
-      doc
-        .fillColor(situacionColor)
-        .text(impresora.estado_especial || "Disponible", 450, y, { width: 70 });
+    const situacionColor = ReporteController.getColorPorSituacion(
+      impresora.estado_especial
+    );
+    doc
+      .fillColor(situacionColor)
+      .text(impresora.estado_especial || "Disponible", 450, y, { width: 70 });
 
-      y += 25;
+    y += 25;
 
       // Línea separadora entre filas
-      if (index < impresoras.length - 1) {
-        doc.moveTo(50, y - 10).lineTo(550, y - 10)
-           .strokeColor("#f3f4f6").lineWidth(0.3).stroke();
-      }
-    });
+    if (index < impresoras.length - 1) {
+      doc.moveTo(50, y - 10).lineTo(550, y - 10)
+         .strokeColor("#f3f4f6").lineWidth(0.3).stroke();
+    }
+  });
 
-    return y + 20;
-  }
+  return y + 20;
+}
 
   private static agregarHeaderHistoricoImpresoras(doc: PDFKit.PDFDocument, y: number): void {
     doc.fillColor("#1f2937").fontSize(8).font("Helvetica-Bold")
@@ -611,7 +624,7 @@ static async generarReporteGeneralEquipos(
   res: Response
 ): Promise<void> {
   try {
-    console.log("Generando reporte general de equipos CON AJUSTES DE ANCHOS");
+    console.log("Generando reporte general de equipos - PAGINACIÓN CORREGIDA");
 
     const [equipos] = await db.promise().query<RowDataPacket[]>(
       `SELECT e.*, 
@@ -624,9 +637,7 @@ static async generarReporteGeneralEquipos(
        ORDER BY e.estado_especial, e.oficina, e.tipo`
     );
 
-    console.log(`Equipos encontrados: ${equipos.length}`);
-
-    const doc = new PDFDocument({
+  const doc = new PDFDocument({
       margin: 50,
       bufferPages: true,
       size: 'A4',
@@ -827,74 +838,7 @@ static async generarReporteGeneralEquipos(
   }
 }
 
-  private static agregarTablaGeneralEquipos(
-    doc: PDFKit.PDFDocument,
-    equipos: any[],
-    startY: number
-  ): number {
-    let y = startY;
 
-    // Header de la tabla
-    ReporteController.agregarHeaderTablaGeneral(doc, y);
-    y += 20;
-
-    // Filas de equipos
-    equipos.forEach((equipo, index) => {
-      y = ReporteController.necesitaNuevaPagina(doc, y, 1);
-      if (y === 50) {
-        ReporteController.agregarHeaderTablaGeneral(doc, y);
-        y += 20;
-      }
-
-      // Código Patrimonial
-      doc
-        .fillColor("#374151")
-        .fontSize(7)
-        .font("Helvetica")
-        .text(equipo.codigoPatrimonial || "Sin código", 50, y, { width: 45 });
-
-      // Equipo (Tipo + Marca + Modelo)
-      const textoEquipo = `${equipo.tipo || ''} ${equipo.marca || ''} ${equipo.modelo || ''}`.trim();
-      doc.text(textoEquipo, 100, y, { width: 75 });
-
-      // IP
-      doc.text(equipo.ip || "N/A", 180, y, { width: 45 });
-
-      // MAC
-      doc.text(equipo.mac || "N/A", 230, y, { width: 65 });
-
-      // Usuario/Estado
-      let usuarioEstado = "";
-      if (equipo.usuario_nombres && equipo.usuario_apellidos) {
-        usuarioEstado = `${equipo.usuario_nombres} ${equipo.usuario_apellidos}`;
-      } else {
-        usuarioEstado = equipo.estado_especial ? equipo.estado_especial.toUpperCase() : "DISPONIBLE";
-      }
-      doc.text(usuarioEstado, 300, y, { width: 145 });
-
-      // Oficina
-      doc.text(equipo.oficina || "N/A", 450, y, { width: 65 });
-
-      // Situación con color
-      const situacion = equipo.estado_especial || "disponible";
-      const situacionColor = ReporteController.getColorPorSituacion(situacion);
-      doc
-        .fillColor(situacionColor)
-        .fontSize(7)
-        .font("Helvetica-Bold")
-        .text(situacion.toUpperCase(), 520, y, { width: 50 });
-
-      y += 20;
-
-      // Línea separadora entre filas
-      if (index < equipos.length - 1) {
-        doc.moveTo(50, y - 5).lineTo(580, y - 5)
-           .strokeColor("#f3f4f6").lineWidth(0.3).stroke();
-      }
-    });
-
-    return y + 20;
-  }
 
   // Métodos auxiliares existentes (se mantienen igual)
   private static agregarTablaUsuario(
