@@ -463,6 +463,157 @@ if (cambios.length > 0) {
             return res.status(500).json({ error: 'Error al exportar las impresoras' });
         }
     }
+
+    // Obtener impresoras por usuario
+static async obtenerImpresorasPorUsuario(req: Request, res: Response): Promise<Response> {
+    const { usuarioId } = req.params;
+
+    if (isNaN(Number(usuarioId))) {
+        return res.status(400).json({ message: 'ID de usuario inválido' });
+    }
+
+    const query = `
+        SELECT i.*, 
+               u.id as usuario_id, u.dni, u.nombres, u.apellidos, u.tipoContrato
+        FROM impresoras i
+        LEFT JOIN usuarios u ON i.usuarioId = u.id
+        WHERE i.usuarioId = ? AND i.estado_especial = 'asignado'
+        ORDER BY i.id DESC
+    `;
+
+    try {
+        const [rows] = await db.promise().query<(Impresora & Usuario)[]>(query, [usuarioId]);
+
+        const impresoras = rows.map((impresora) => ({
+            ...impresora,
+            usuario: impresora.usuario_id
+                ? {
+                    id: impresora.usuario_id,
+                    dni: impresora.dni,
+                    nombres: impresora.nombres,
+                    apellidos: impresora.apellidos,
+                    tipoContrato: impresora.tipoContrato,
+                }
+                : null,
+        }));
+
+        return res.status(200).json({
+            message: "Impresoras del usuario obtenidas correctamente",
+            data: impresoras,
+        });
+    } catch (err) {
+        console.error("Error al obtener impresoras del usuario:", err);
+        return res.status(500).json({ error: "Error al obtener las impresoras del usuario" });
+    }
+}
+
+static async transferenciaEnBloque(req: Request, res: Response): Promise<Response> {
+    const { usuarioOrigenId, usuarioDestinoId, impresoraIds } = req.body;
+    const usuarioSistemaId = HistorialHelper.obtenerUsuarioSistemaId(req);
+
+    if (!usuarioOrigenId || !usuarioDestinoId || !impresoraIds || !Array.isArray(impresoraIds)) {
+        return res.status(400).json({ 
+            error: 'Datos inválidos para transferencia en bloque' 
+        });
+    }
+
+    if (usuarioOrigenId === usuarioDestinoId) {
+        return res.status(400).json({ 
+            error: 'El usuario origen y destino no pueden ser el mismo' 
+        });
+    }
+
+    const conn = await db.promise().getConnection();
+
+    try {
+        await conn.beginTransaction();
+
+        // 1. Verificar que el usuario destino existe
+        const [usuarioDestino] = await conn.query<RowDataPacket[]>(
+            'SELECT id, nombres, apellidos, oficina FROM usuarios WHERE id = ?',
+            [usuarioDestinoId]
+        );
+
+        if (usuarioDestino.length === 0) {
+            await conn.rollback();
+            return res.status(404).json({ error: 'Usuario destino no encontrado' });
+        }
+
+        const usuarioDestinoData = usuarioDestino[0];
+
+        // 2. Verificar que las impresoras existen y pertenecen al usuario origen
+        // ✅ CORREGIDO: Usar parámetros directamente en el array
+        const [impresoras] = await conn.query<RowDataPacket[]>(
+            `SELECT id, modelo, codigoPatrimonial, oficina, usuarioId 
+             FROM impresoras 
+             WHERE id IN (?) AND usuarioId = ? AND estado_especial = 'asignado'`,
+            [impresoraIds, usuarioOrigenId] // ✅ Pasar el array directamente
+        );
+
+        if (impresoras.length !== impresoraIds.length) {
+            await conn.rollback();
+            return res.status(400).json({ 
+                error: 'Algunas impresoras no existen o no pertenecen al usuario origen' 
+            });
+        }
+
+        // 3. Actualizar cada impresora
+        for (const impresora of impresoras) {
+            const query = `
+                UPDATE impresoras 
+                SET usuarioId = ?, oficina = ?, estado_especial = 'asignado'
+                WHERE id = ?
+            `;
+
+            await conn.query(query, [
+                usuarioDestinoId,
+                usuarioDestinoData.oficina,
+                impresora.id
+            ]);
+
+            // 4. Registrar en historial para cada impresora
+            const detallesHistorial = {
+                prev: {
+                    usuarioId: usuarioOrigenId,
+                    oficina: impresora.oficina,
+                    estado_especial: 'asignado'
+                },
+                next: {
+                    usuarioId: usuarioDestinoId,
+                    oficina: usuarioDestinoData.oficina,
+                    estado_especial: 'asignado'
+                },
+                nota: `Transferencia masiva desde usuario ${usuarioOrigenId} a ${usuarioDestinoData.nombres} ${usuarioDestinoData.apellidos}`,
+                cambios_realizados: ['reasignacion', 'traslado']
+            };
+
+            await HistorialHelper.registrarCambio(
+                'impresora',
+                impresora.id,
+                'reasignacion',
+                detallesHistorial,
+                usuarioSistemaId
+            );
+        }
+
+        await conn.commit();
+
+        return res.status(200).json({
+            message: `Transferencia completada: ${impresoras.length} impresora(s) transferidas exitosamente`,
+            impresorasTransferidas: impresoras.length
+        });
+
+    } catch (err: any) {
+        await conn.rollback();
+        console.error('Error en transferencia en bloque de impresoras:', err);
+        return res.status(500).json({ 
+            error: 'Error al realizar la transferencia en bloque de impresoras' 
+        });
+    } finally {
+        conn.release();
+    }
+}
+
 }
 
 export default ImpresoraController;
