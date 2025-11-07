@@ -156,8 +156,7 @@ class EquipoController {
      tieneTeclado, tieneMouse, usuarioId) 
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `;
-
-    try {
+  try {
       const [result] = await db
         .promise()
         .query<ResultSetHeader>(query, [
@@ -185,9 +184,41 @@ class EquipoController {
           usuarioId || null,
         ]);
 
-      return res.status(201).json({
+            const equipoId = result.insertId;
+      const usuarioSistemaId = HistorialHelper.obtenerUsuarioSistemaId(req);
+
+      // ✅ SOLO ESTO AGREGAS - Registro de ASIGNACIÓN si tiene usuario
+      if (usuarioId) {
+        const [usuario] = await db.promise().query<RowDataPacket[]>(
+          'SELECT nombres, apellidos FROM usuarios WHERE id = ?',
+          [usuarioId]
+        );
+
+        const detallesAsignacion = {
+          prev: {
+            usuarioId: null,
+            estado_especial: 'disponible'
+          },
+          next: {
+            usuarioId: usuarioId,
+            estado_especial: 'asignado'
+          },
+          nota: `Equipo asignado a ${usuario[0]?.nombres || 'Usuario'} al crear equipo`
+        };
+
+        await HistorialHelper.registrarCambio(
+          'equipo',
+          equipoId,
+          'asignacion',
+          detallesAsignacion,
+          usuarioSistemaId
+        );
+      }
+
+
+        return res.status(201).json({
         message: "Equipo creado correctamente",
-        id: result.insertId,
+        id: equipoId,
       });
     } catch (err: any) {
       console.error("Error al agregar el equipo:", err);
@@ -631,6 +662,157 @@ static async actualizarEquipo(req: Request, res: Response): Promise<Response> {
       return res.status(500).json({ error: "Error al buscar equipos" });
     }
   }
+
+  // En EquipoController.ts - Agregar este método ANTES del export default
+static async obtenerEquiposPorUsuario(req: Request, res: Response): Promise<Response> {
+    const { usuarioId } = req.params;
+
+    if (isNaN(Number(usuarioId))) {
+        return res.status(400).json({ message: 'ID de usuario inválido' });
+    }
+
+    const query = `
+        SELECT e.*, 
+               u.id as usuario_id, u.dni, u.nombres, u.apellidos, u.tipoContrato
+        FROM equipos e
+        LEFT JOIN usuarios u ON e.usuarioId = u.id
+        WHERE e.usuarioId = ? AND e.estado_especial = 'asignado'
+        ORDER BY e.id DESC
+    `;
+
+    try {
+        const [rows] = await db.promise().query<(Equipo & Usuario)[]>(query, [usuarioId]);
+
+        const equipos = rows.map((equipo) => ({
+            ...equipo,
+            tieneTeclado: equipo.tieneTeclado === 1,
+            tieneMouse: equipo.tieneMouse === 1,
+            usuario: equipo.usuario_id
+                ? {
+                    id: equipo.usuario_id,
+                    dni: equipo.dni,
+                    nombres: equipo.nombres,
+                    apellidos: equipo.apellidos,
+                    tipoContrato: equipo.tipoContrato,
+                }
+                : null,
+        }));
+
+        return res.status(200).json({
+            message: "Equipos del usuario obtenidos correctamente",
+            data: equipos,
+        });
+    } catch (err) {
+        console.error("Error al obtener equipos del usuario:", err);
+        return res.status(500).json({ error: "Error al obtener los equipos del usuario" });
+    }
+}
+static async transferenciaEnBloque(req: Request, res: Response): Promise<Response> {
+    const { usuarioOrigenId, usuarioDestinoId, equipoIds } = req.body;
+    const usuarioSistemaId = HistorialHelper.obtenerUsuarioSistemaId(req);
+
+    if (!usuarioOrigenId || !usuarioDestinoId || !equipoIds || !Array.isArray(equipoIds)) {
+        return res.status(400).json({ 
+            error: 'Datos inválidos para transferencia en bloque' 
+        });
+    }
+
+    if (usuarioOrigenId === usuarioDestinoId) {
+        return res.status(400).json({ 
+            error: 'El usuario origen y destino no pueden ser el mismo' 
+        });
+    }
+
+    const conn = await db.promise().getConnection();
+
+    try {
+        await conn.beginTransaction();
+
+        // 1. Verificar que el usuario destino existe
+        const [usuarioDestino] = await conn.query<RowDataPacket[]>(
+            'SELECT id, nombres, apellidos, oficina FROM usuarios WHERE id = ?',
+            [usuarioDestinoId]
+        );
+
+        if (usuarioDestino.length === 0) {
+            await conn.rollback();
+            return res.status(404).json({ error: 'Usuario destino no encontrado' });
+        }
+
+        const usuarioDestinoData = usuarioDestino[0];
+
+        // 2. Verificar que los equipos existen y pertenecen al usuario origen
+        // ✅ CORREGIDO: Usar parámetros directamente en el array
+        const [equipos] = await conn.query<RowDataPacket[]>(
+            `SELECT id, marca, modelo, codigoPatrimonial, oficina, usuarioId 
+             FROM equipos 
+             WHERE id IN (?) AND usuarioId = ? AND estado_especial = 'asignado'`,
+            [equipoIds, usuarioOrigenId] // ✅ Pasar el array directamente
+        );
+
+        if (equipos.length !== equipoIds.length) {
+            await conn.rollback();
+            return res.status(400).json({ 
+                error: 'Algunos equipos no existen o no pertenecen al usuario origen' 
+            });
+        }
+
+        // 3. Actualizar cada equipo
+        for (const equipo of equipos) {
+            const query = `
+                UPDATE equipos 
+                SET usuarioId = ?, oficina = ?, estado_especial = 'asignado'
+                WHERE id = ?
+            `;
+
+            await conn.query(query, [
+                usuarioDestinoId,
+                usuarioDestinoData.oficina,
+                equipo.id
+            ]);
+
+            // 4. Registrar en historial para cada equipo
+            const detallesHistorial = {
+                prev: {
+                    usuarioId: usuarioOrigenId,
+                    oficina: equipo.oficina,
+                    estado_especial: 'asignado'
+                },
+                next: {
+                    usuarioId: usuarioDestinoId,
+                    oficina: usuarioDestinoData.oficina,
+                    estado_especial: 'asignado'
+                },
+                nota: `Transferencia masiva desde usuario ${usuarioOrigenId} a ${usuarioDestinoData.nombres} ${usuarioDestinoData.apellidos}`,
+                cambios_realizados: ['reasignacion', 'traslado']
+            };
+
+            await HistorialHelper.registrarCambio(
+                'equipo',
+                equipo.id,
+                'reasignacion',
+                detallesHistorial,
+                usuarioSistemaId
+            );
+        }
+
+        await conn.commit();
+
+        return res.status(200).json({
+            message: `Transferencia completada: ${equipos.length} equipo(s) transferidos exitosamente`,
+            equiposTransferidos: equipos.length
+        });
+
+    } catch (err: any) {
+        await conn.rollback();
+        console.error('Error en transferencia en bloque:', err);
+        return res.status(500).json({ 
+            error: 'Error al realizar la transferencia en bloque' 
+        });
+    } finally {
+        conn.release();
+    }
+}
 
   // Exportar equipos (incluyendo datos de usuario)
   static async exportarEquipos(req: Request, res: Response): Promise<Response> {
